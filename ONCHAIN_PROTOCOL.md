@@ -18,7 +18,12 @@ Mainnet proof reference:
 
 ## 2. Memo Protocol
 
-Memo payloads use this binary layout before memo encoding:
+This binary layout is a transitional encoding. When ZIP 302 (Structured Memos)
+ships, NSM1 payloads should be carried as a ZIP 302 part type. The attestation
+semantics below (event types, hash construction, Merkle rules) are independent
+of the memo container.
+
+Payloads use this binary layout before memo encoding:
 
 ```text
 byte 0      : version            = 0x01
@@ -30,7 +35,7 @@ bytes 46..77: serial_hash        = 32 bytes, or 32 zero bytes when unused
 bytes 78..n : note               = UTF-8 human-readable note, optional
 ```
 
-For human-readable transport, the shielded memo envelope is rendered as:
+For human-readable transport, the shielded memo payload is rendered as:
 
 ```text
 NSM1:{type}:{payload}

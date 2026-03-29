@@ -1,6 +1,6 @@
 # nsm1
 
-Reference implementation for the NSM1 structured memo protocol on Zcash.
+Reference implementation for the NSM1 lifecycle attestation protocol on Zcash.
 
 Built for [Nordic Shield](https://nordicshield.frontiercompute.io)  - privacy-shielded mining infrastructure operated by [Frontier Compute](https://frontiercompute.io).
 
@@ -108,10 +108,7 @@ implementation of the 2-of-3 Pallas signing round is published in
 
 ## ZIP Proposal
 
-A draft ZIP for the structured NSM1 memo protocol is in progress. It codifies
-the typed memo envelope, event hash rules, and Merkle-root anchoring flow used
-by the reference implementation, alongside the companion verifier and published
-test vectors.
+A draft ZIP for the NSM1 attestation format is open at [zcash/zips PR #1243](https://github.com/zcash/zips/pull/1243). It defines the event type registry, hash construction rules, Merkle tree aggregation, and verification procedure. The memo container relationship to ZIP 302 (Structured Memos) is documented in the draft.
 
 ## Run tests
 

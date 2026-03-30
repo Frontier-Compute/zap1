@@ -861,6 +861,7 @@ async fn verify_check(
     let valid = zap1_verify::verify_proof(&leaf_bytes, &proof_steps, &root_bytes);
 
     Ok(Json(serde_json::json!({
+        "protocol": "ZAP1",
         "valid": valid,
         "leaf_hash": bundle.leaf.leaf_hash,
         "event_type": bundle.leaf.event_type.label(),

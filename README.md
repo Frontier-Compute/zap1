@@ -112,7 +112,8 @@ python3 scripts/check_anchor_liveness.py
 ```
 
 - `zap1_audit`: verify a proof bundle against the Merkle tree and print anchor facts
-- `zap1_schema`: validate event witness data against deployed hash construction
+- `zap1_schema`: validate event witness data, recompute hashes, emit witness bundles (`--emit-witness`)
+- `zap1_export`: selective disclosure - produce self-contained audit packages for counterparties
 - `zap1_ops`: operator status rollup for scanner lag, anchor freshness, queue depth
 - `zaino_adapter`: verify all anchors via Zaino gRPC compact block path
 - `memo_scan`: scan block ranges via Zaino, decrypt and classify all shielded memos

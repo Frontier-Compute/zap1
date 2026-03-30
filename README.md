@@ -103,15 +103,19 @@ verification primitives without depending on the reference implementation server
 
 ```bash
 cargo run --bin zap1_audit -- --bundle examples/live_ownership_attest_proof.json
-cargo run --bin zip302_tvlv -- encode examples/zip302_parts_example.json
+cargo run --bin zap1_schema -- --witness examples/schema_witness.json
 cargo run --bin zap1_ops -- --from-dir examples/zap1_ops_fixture --json
+cargo run --bin zaino_adapter -- --zaino-url http://127.0.0.1:8137
+cargo run --bin zip302_tvlv -- encode examples/zip302_parts_example.json
 python3 scripts/check_anchor_liveness.py
 ```
 
-- `zap1_audit`: verify a proof bundle with `zap1-verify` and print the anchor facts to check on-chain
-- `zip302_tvlv`: reference ZIP 302 TVLV encoder/decoder built on `src/zip302.rs`
-- `zap1_ops`: operator status rollup for scanner lag, anchor freshness, queue depth, and last proofable root
-- `check_anchor_liveness.py`: compare public ZAP1 surfaces for freshness and consistency
+- `zap1_audit`: verify a proof bundle against the Merkle tree and print anchor facts
+- `zap1_schema`: validate event witness data against deployed hash construction
+- `zap1_ops`: operator status rollup for scanner lag, anchor freshness, queue depth
+- `zaino_adapter`: verify all anchors via Zaino gRPC compact block path
+- `zip302_tvlv`: reference ZIP 302 TVLV encoder/decoder
+- `check_anchor_liveness.py`: nightly anchor freshness and consistency check
 
 ## Ecosystem
 

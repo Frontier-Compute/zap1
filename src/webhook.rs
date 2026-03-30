@@ -10,7 +10,12 @@ use tokio::time::{sleep, Duration};
 use crate::db::Db;
 
 /// Deliver a webhook notification for a lifecycle event.
-pub async fn deliver_leaf_event(db: &Arc<Db>, leaf_hash: &str, event_type: &str, wallet_hash: &str) {
+pub async fn deliver_leaf_event(
+    db: &Arc<Db>,
+    leaf_hash: &str,
+    event_type: &str,
+    wallet_hash: &str,
+) {
     let hooks = match db.list_webhooks() {
         Ok(h) => h,
         Err(_) => return,
@@ -86,10 +91,20 @@ async fn deliver_with_retry(client: &reqwest::Client, url: &str, payload: &str, 
         match result {
             Ok(resp) if resp.status().is_success() => return,
             Ok(resp) => {
-                tracing::debug!("Webhook delivery to {} returned {}, attempt {}", url, resp.status(), attempt + 1);
+                tracing::debug!(
+                    "Webhook delivery to {} returned {}, attempt {}",
+                    url,
+                    resp.status(),
+                    attempt + 1
+                );
             }
             Err(e) => {
-                tracing::debug!("Webhook delivery to {} failed: {}, attempt {}", url, e, attempt + 1);
+                tracing::debug!(
+                    "Webhook delivery to {} failed: {}, attempt {}",
+                    url,
+                    e,
+                    attempt + 1
+                );
             }
         }
 

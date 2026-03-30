@@ -77,10 +77,10 @@ impl ZebraRpcBackend {
 #[async_trait]
 impl NodeBackend for ZebraRpcBackend {
     async fn get_chain_height(&self) -> Result<u32> {
-        let result = self.rpc_call("getblockchaininfo", serde_json::json!([])).await?;
-        let height = result["blocks"]
-            .as_u64()
-            .context("Missing blocks field")?;
+        let result = self
+            .rpc_call("getblockchaininfo", serde_json::json!([]))
+            .await?;
+        let height = result["blocks"].as_u64().context("Missing blocks field")?;
         Ok(height as u32)
     }
 
@@ -110,7 +110,9 @@ impl NodeBackend for ZebraRpcBackend {
     }
 
     async fn get_mempool_txids(&self) -> Result<Vec<String>> {
-        let result = self.rpc_call("getrawmempool", serde_json::json!([])).await?;
+        let result = self
+            .rpc_call("getrawmempool", serde_json::json!([]))
+            .await?;
         let txids: Vec<String> = result
             .as_array()
             .map(|arr| {
@@ -142,9 +144,7 @@ impl ZainoBackend {
 
     /// Create a new gRPC client connection. We create per-call to avoid
     /// holding a long-lived connection that may go stale.
-    async fn connect(
-        &self,
-    ) -> Result<CompactTxStreamerClient<tonic::transport::Channel>> {
+    async fn connect(&self) -> Result<CompactTxStreamerClient<tonic::transport::Channel>> {
         let channel = tonic::transport::Channel::from_shared(self.uri.clone())
             .context("Invalid Zaino URI")?
             .connect()

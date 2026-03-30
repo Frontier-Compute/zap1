@@ -75,11 +75,15 @@ fn parse_args() -> Result<InputSource> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--bundle" => {
-                let path = args.next().ok_or_else(|| anyhow!("missing value for --bundle"))?;
+                let path = args
+                    .next()
+                    .ok_or_else(|| anyhow!("missing value for --bundle"))?;
                 source = Some(InputSource::File(path));
             }
             "--bundle-url" => {
-                let url = args.next().ok_or_else(|| anyhow!("missing value for --bundle-url"))?;
+                let url = args
+                    .next()
+                    .ok_or_else(|| anyhow!("missing value for --bundle-url"))?;
                 source = Some(InputSource::Url(url));
             }
             "--help" | "-h" => {

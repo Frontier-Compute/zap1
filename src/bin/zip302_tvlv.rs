@@ -29,7 +29,9 @@ fn main() -> Result<()> {
 
     match cmd.as_str() {
         "encode" => {
-            let path = args.next().ok_or_else(|| anyhow!("missing json file path"))?;
+            let path = args
+                .next()
+                .ok_or_else(|| anyhow!("missing json file path"))?;
             if args.next().is_some() {
                 return Err(anyhow!("encode accepts exactly one json file path"));
             }

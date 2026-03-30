@@ -3,8 +3,13 @@ use crate::models::Invoice;
 
 /// Send a Signal message via signal-cli-rest-api on the VPS.
 async fn send_signal(config: &Config, message: &str) {
-    let Some(number) = &config.signal_number else { return };
-    let signal_url = config.signal_api_url.as_deref().unwrap_or("http://127.0.0.1:8431");
+    let Some(number) = &config.signal_number else {
+        return;
+    };
+    let signal_url = config
+        .signal_api_url
+        .as_deref()
+        .unwrap_or("http://127.0.0.1:8431");
 
     let payload = serde_json::json!({
         "message": message,
@@ -13,7 +18,12 @@ async fn send_signal(config: &Config, message: &str) {
     });
 
     let url = format!("{}/v2/send", signal_url);
-    match reqwest::Client::new().post(&url).json(&payload).send().await {
+    match reqwest::Client::new()
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+    {
         Ok(resp) => {
             if !resp.status().is_success() {
                 tracing::warn!("Signal send failed: HTTP {}", resp.status());

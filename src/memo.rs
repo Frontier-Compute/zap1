@@ -105,7 +105,9 @@ impl StructuredMemo {
 
         let memo_type_hex = parts.next().ok_or_else(|| anyhow!("missing memo type"))?;
         let memo_type = MemoType::from_u8(u8::from_str_radix(memo_type_hex, 16)?)?;
-        let payload_hex = parts.next().ok_or_else(|| anyhow!("missing memo payload"))?;
+        let payload_hex = parts
+            .next()
+            .ok_or_else(|| anyhow!("missing memo payload"))?;
         if parts.next().is_some() {
             return Err(anyhow!("unexpected extra memo fields"));
         }
@@ -181,7 +183,11 @@ pub fn hash_shield_renewal(wallet_hash: &str, year: u32) -> [u8; 32] {
 
 /// 0x07 TRANSFER: hash(old_wallet || new_wallet || serial_number)
 /// Per ONCHAIN_PROTOCOL.md Section 3
-pub fn hash_transfer(old_wallet_hash: &str, new_wallet_hash: &str, serial_number: &str) -> [u8; 32] {
+pub fn hash_transfer(
+    old_wallet_hash: &str,
+    new_wallet_hash: &str,
+    serial_number: &str,
+) -> [u8; 32] {
     let mut payload = Vec::new();
     payload.extend_from_slice(&(old_wallet_hash.len() as u16).to_be_bytes());
     payload.extend_from_slice(old_wallet_hash.as_bytes());

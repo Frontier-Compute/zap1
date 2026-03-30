@@ -306,13 +306,7 @@ async fn get_tx_height(client: &reqwest::Client, url: &str, txid: &str) -> Resul
         "method": "getrawtransaction",
         "params": [txid, 1],
     });
-    let resp: serde_json::Value = client
-        .post(url)
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: serde_json::Value = client.post(url).json(&body).send().await?.json().await?;
     let height = resp["result"]["height"]
         .as_u64()
         .context("No height in tx")?;
@@ -320,8 +314,7 @@ async fn get_tx_height(client: &reqwest::Client, url: &str, txid: &str) -> Resul
 }
 
 async fn notify_success(config: &Config, leaves: u32, txid: &str) {
-    if let (Some(signal_url), Some(signal_number)) =
-        (&config.signal_api_url, &config.signal_number)
+    if let (Some(signal_url), Some(signal_number)) = (&config.signal_api_url, &config.signal_number)
     {
         let msg = format!(
             "Merkle root anchored to Zcash\nLeaves: {}\nTxid: {}...",
@@ -341,8 +334,7 @@ async fn notify_success(config: &Config, leaves: u32, txid: &str) {
 }
 
 async fn notify_failure(config: &Config, fail_count: u32, backoff_minutes: u64, reason: &str) {
-    if let (Some(signal_url), Some(signal_number)) =
-        (&config.signal_api_url, &config.signal_number)
+    if let (Some(signal_url), Some(signal_number)) = (&config.signal_api_url, &config.signal_number)
     {
         let msg = format!(
             "Anchor broadcast FAILED\nReason: {}\nConsecutive failures: {}\nBackoff: {}m",
@@ -366,11 +358,7 @@ async fn webhook_event(url: &str, event: &str, data: &serde_json::Value) {
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "data": data,
     });
-    let _ = reqwest::Client::new()
-        .post(url)
-        .json(&payload)
-        .send()
-        .await;
+    let _ = reqwest::Client::new().post(url).json(&payload).send().await;
 }
 
 #[cfg(test)]

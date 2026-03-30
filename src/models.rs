@@ -57,7 +57,9 @@ pub struct CreateInvoiceRequest {
     pub wallet_hash: Option<String>,
 }
 
-fn default_invoice_type() -> String { "program".to_string() }
+fn default_invoice_type() -> String {
+    "program".to_string()
+}
 
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {

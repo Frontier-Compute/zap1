@@ -96,8 +96,14 @@ fn send_anchor(flags: HashMap<String, String>) -> Result<()> {
     println!("Leaf count: {}", root.leaf_count);
     println!("Memo: {}", StructuredMemo::decode(&memo)?.encode());
     println!();
-    println!("zingo-cli send output:\n{}", String::from_utf8_lossy(&send_output.stdout));
-    println!("zingo-cli confirm output:\n{}", String::from_utf8_lossy(&confirm_output.stdout));
+    println!(
+        "zingo-cli send output:\n{}",
+        String::from_utf8_lossy(&send_output.stdout)
+    );
+    println!(
+        "zingo-cli confirm output:\n{}",
+        String::from_utf8_lossy(&confirm_output.stdout)
+    );
     println!();
 
     match txid {

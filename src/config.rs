@@ -41,8 +41,8 @@ impl Config {
             _ => Network::TestNetwork,
         };
 
-        let zebra_rpc_url = std::env::var("ZEBRA_RPC_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:18232".to_string());
+        let zebra_rpc_url =
+            std::env::var("ZEBRA_RPC_URL").unwrap_or_else(|_| "http://127.0.0.1:18232".to_string());
 
         let zaino_grpc_url = std::env::var("ZAINO_GRPC_URL").ok();
 

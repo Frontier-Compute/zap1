@@ -36,15 +36,15 @@ pub const DEFAULT_PERSONALIZATION: Personalization<'static> = Personalization {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum EventType {
-    ProgramEntry    = 0x01,
+    ProgramEntry = 0x01,
     OwnershipAttest = 0x02,
-    ContractAnchor  = 0x03,
-    Deployment      = 0x04,
-    HostingPayment  = 0x05,
-    ShieldRenewal   = 0x06,
-    Transfer        = 0x07,
-    Exit            = 0x08,
-    MerkleRoot      = 0x09,
+    ContractAnchor = 0x03,
+    Deployment = 0x04,
+    HostingPayment = 0x05,
+    ShieldRenewal = 0x06,
+    Transfer = 0x07,
+    Exit = 0x08,
+    MerkleRoot = 0x09,
 }
 
 impl EventType {
@@ -60,7 +60,7 @@ impl EventType {
             0x07 => Some(Self::Transfer),
             0x08 => Some(Self::Exit),
             0x09 => Some(Self::MerkleRoot),
-            _    => None,
+            _ => None,
         }
     }
 }
@@ -73,9 +73,7 @@ impl EventType {
 #[derive(Debug, Clone)]
 pub enum EventPayload<'a> {
     /// `BLAKE2b(0x01 || wallet_hash)` - no length prefix.
-    ProgramEntry {
-        wallet_hash: &'a [u8],
-    },
+    ProgramEntry { wallet_hash: &'a [u8] },
     /// `BLAKE2b(0x02 || len(wallet) || wallet || len(serial) || serial)`
     OwnershipAttest {
         wallet_hash: &'a [u8],
@@ -99,10 +97,7 @@ pub enum EventPayload<'a> {
         year: u32,
     },
     /// `BLAKE2b(0x06 || len(wallet) || wallet || year_be)`
-    ShieldRenewal {
-        wallet_hash: &'a [u8],
-        year: u32,
-    },
+    ShieldRenewal { wallet_hash: &'a [u8], year: u32 },
     /// `BLAKE2b(0x07 || len(old) || old || len(new) || new || len(serial) || serial)`
     Transfer {
         old_wallet_hash: &'a [u8],
@@ -116,9 +111,7 @@ pub enum EventPayload<'a> {
         timestamp: u64,
     },
     /// Type 0x09: raw 32-byte Merkle root (no additional hashing).
-    MerkleRoot {
-        root_hash: [u8; 32],
-    },
+    MerkleRoot { root_hash: [u8; 32] },
 }
 
 /// Position of a sibling node in a Merkle proof step.
@@ -203,7 +196,10 @@ pub fn compute_leaf_hash_with_personalization(
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::OwnershipAttest { wallet_hash, serial_number } => {
+        EventPayload::OwnershipAttest {
+            wallet_hash,
+            serial_number,
+        } => {
             let mut buf = Vec::with_capacity(1 + 2 + wallet_hash.len() + 2 + serial_number.len());
             buf.push(EventType::OwnershipAttest as u8);
             push_len_prefixed(&mut buf, wallet_hash);
@@ -211,16 +207,25 @@ pub fn compute_leaf_hash_with_personalization(
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::ContractAnchor { serial_number, contract_sha256 } => {
-            let mut buf = Vec::with_capacity(1 + 2 + serial_number.len() + 2 + contract_sha256.len());
+        EventPayload::ContractAnchor {
+            serial_number,
+            contract_sha256,
+        } => {
+            let mut buf =
+                Vec::with_capacity(1 + 2 + serial_number.len() + 2 + contract_sha256.len());
             buf.push(EventType::ContractAnchor as u8);
             push_len_prefixed(&mut buf, serial_number);
             push_len_prefixed(&mut buf, contract_sha256);
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::Deployment { serial_number, facility_id, timestamp } => {
-            let mut buf = Vec::with_capacity(1 + 2 + serial_number.len() + 2 + facility_id.len() + 8);
+        EventPayload::Deployment {
+            serial_number,
+            facility_id,
+            timestamp,
+        } => {
+            let mut buf =
+                Vec::with_capacity(1 + 2 + serial_number.len() + 2 + facility_id.len() + 8);
             buf.push(EventType::Deployment as u8);
             push_len_prefixed(&mut buf, serial_number);
             push_len_prefixed(&mut buf, facility_id);
@@ -228,7 +233,11 @@ pub fn compute_leaf_hash_with_personalization(
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::HostingPayment { serial_number, month, year } => {
+        EventPayload::HostingPayment {
+            serial_number,
+            month,
+            year,
+        } => {
             let mut buf = Vec::with_capacity(1 + 2 + serial_number.len() + 4 + 4);
             buf.push(EventType::HostingPayment as u8);
             push_len_prefixed(&mut buf, serial_number);
@@ -245,7 +254,11 @@ pub fn compute_leaf_hash_with_personalization(
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::Transfer { old_wallet_hash, new_wallet_hash, serial_number } => {
+        EventPayload::Transfer {
+            old_wallet_hash,
+            new_wallet_hash,
+            serial_number,
+        } => {
             let mut buf = Vec::with_capacity(
                 1 + 2 + old_wallet_hash.len() + 2 + new_wallet_hash.len() + 2 + serial_number.len(),
             );
@@ -256,8 +269,13 @@ pub fn compute_leaf_hash_with_personalization(
             leaf_blake2b(&buf, personalization)
         }
 
-        EventPayload::Exit { wallet_hash, serial_number, timestamp } => {
-            let mut buf = Vec::with_capacity(1 + 2 + wallet_hash.len() + 2 + serial_number.len() + 8);
+        EventPayload::Exit {
+            wallet_hash,
+            serial_number,
+            timestamp,
+        } => {
+            let mut buf =
+                Vec::with_capacity(1 + 2 + wallet_hash.len() + 2 + serial_number.len() + 8);
             buf.push(EventType::Exit as u8);
             push_len_prefixed(&mut buf, wallet_hash);
             push_len_prefixed(&mut buf, serial_number);
@@ -283,7 +301,7 @@ pub fn verify_proof(
     for step in proof_path {
         current = match step.position {
             SiblingPosition::Right => node_hash(&current, &step.hash),
-            SiblingPosition::Left  => node_hash(&step.hash, &current),
+            SiblingPosition::Left => node_hash(&step.hash, &current),
         };
     }
     current == *expected_root
@@ -421,9 +439,9 @@ mod tests {
 
     #[test]
     fn vec_09_merkle_root() {
-        let root = hex_to_bytes32(
-            "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-        ).unwrap();
+        let root =
+            hex_to_bytes32("024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a")
+                .unwrap();
         let hash = compute_leaf_hash(&EventPayload::MerkleRoot { root_hash: root });
         assert_eq!(hash, root);
     }
@@ -455,12 +473,12 @@ mod tests {
 
     #[test]
     fn e2e_node_hash_to_root() {
-        let leaf1 = hex_to_bytes32(
-            "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-        ).unwrap();
-        let leaf2 = hex_to_bytes32(
-            "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
-        ).unwrap();
+        let leaf1 =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
+        let leaf2 =
+            hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
+                .unwrap();
         let root = node_hash(&leaf1, &leaf2);
         assert_eq!(
             bytes_to_hex(&root),
@@ -471,15 +489,15 @@ mod tests {
     #[test]
     fn e2e_verify_proof_leaf1() {
         // Verify leaf1 (PROGRAM_ENTRY) with leaf2 as sibling on the right
-        let leaf1 = hex_to_bytes32(
-            "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-        ).unwrap();
-        let leaf2 = hex_to_bytes32(
-            "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
-        ).unwrap();
-        let expected_root = hex_to_bytes32(
-            "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-        ).unwrap();
+        let leaf1 =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
+        let leaf2 =
+            hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
+                .unwrap();
+        let expected_root =
+            hex_to_bytes32("024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a")
+                .unwrap();
 
         let proof = vec![ProofStep {
             hash: leaf2,
@@ -492,15 +510,15 @@ mod tests {
     #[test]
     fn e2e_verify_proof_leaf2() {
         // Verify leaf2 (OWNERSHIP_ATTEST) with leaf1 as sibling on the left
-        let leaf1 = hex_to_bytes32(
-            "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-        ).unwrap();
-        let leaf2 = hex_to_bytes32(
-            "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
-        ).unwrap();
-        let expected_root = hex_to_bytes32(
-            "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-        ).unwrap();
+        let leaf1 =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
+        let leaf2 =
+            hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
+                .unwrap();
+        let expected_root =
+            hex_to_bytes32("024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a")
+                .unwrap();
 
         let proof = vec![ProofStep {
             hash: leaf1,
@@ -512,12 +530,12 @@ mod tests {
 
     #[test]
     fn verify_proof_wrong_root_fails() {
-        let leaf = hex_to_bytes32(
-            "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-        ).unwrap();
-        let sibling = hex_to_bytes32(
-            "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
-        ).unwrap();
+        let leaf =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
+        let sibling =
+            hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
+                .unwrap();
         let wrong_root = [0xffu8; 32];
 
         let proof = vec![ProofStep {
@@ -531,9 +549,9 @@ mod tests {
     #[test]
     fn verify_proof_empty_path() {
         // Empty proof path: leaf IS the root
-        let leaf = hex_to_bytes32(
-            "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-        ).unwrap();
+        let leaf =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
         assert!(verify_proof(&leaf, &[], &leaf));
     }
 
@@ -551,15 +569,27 @@ mod tests {
 
         // Prove leaf c: sibling d (right), then sibling ab (left)
         let proof = vec![
-            ProofStep { hash: d, position: SiblingPosition::Right },
-            ProofStep { hash: ab, position: SiblingPosition::Left },
+            ProofStep {
+                hash: d,
+                position: SiblingPosition::Right,
+            },
+            ProofStep {
+                hash: ab,
+                position: SiblingPosition::Left,
+            },
         ];
         assert!(verify_proof(&c, &proof, &root));
 
         // Prove leaf b: sibling a (left), then sibling cd (right)
         let proof = vec![
-            ProofStep { hash: a, position: SiblingPosition::Left },
-            ProofStep { hash: cd, position: SiblingPosition::Right },
+            ProofStep {
+                hash: a,
+                position: SiblingPosition::Left,
+            },
+            ProofStep {
+                hash: cd,
+                position: SiblingPosition::Right,
+            },
         ];
         assert!(verify_proof(&b, &proof, &root));
     }
@@ -599,10 +629,11 @@ mod tests {
 
     #[test]
     fn hex_roundtrip() {
-        let bytes = [0x01, 0x23, 0xab, 0xff, 0x00, 0x99, 0xde, 0xad,
-                     0xbe, 0xef, 0xca, 0xfe, 0x42, 0x00, 0x7f, 0x80,
-                     0x01, 0x23, 0xab, 0xff, 0x00, 0x99, 0xde, 0xad,
-                     0xbe, 0xef, 0xca, 0xfe, 0x42, 0x00, 0x7f, 0x80];
+        let bytes = [
+            0x01, 0x23, 0xab, 0xff, 0x00, 0x99, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0x42, 0x00,
+            0x7f, 0x80, 0x01, 0x23, 0xab, 0xff, 0x00, 0x99, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe,
+            0x42, 0x00, 0x7f, 0x80,
+        ];
         let hex = bytes_to_hex(&bytes);
         assert_eq!(hex_to_bytes32(&hex).unwrap(), bytes);
     }

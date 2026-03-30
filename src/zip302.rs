@@ -64,24 +64,35 @@ fn decode_compact_size(data: &[u8]) -> Result<(u64, usize)> {
     match data[0] {
         0..=252 => Ok((data[0] as u64, 1)),
         0xFD => {
-            if data.len() < 3 { return Err(TvlvError::Truncated); }
+            if data.len() < 3 {
+                return Err(TvlvError::Truncated);
+            }
             let v = u16::from_le_bytes([data[1], data[2]]) as u64;
-            if v < 253 { return Err(TvlvError::InvalidCompactSize); }
+            if v < 253 {
+                return Err(TvlvError::InvalidCompactSize);
+            }
             Ok((v, 3))
         }
         0xFE => {
-            if data.len() < 5 { return Err(TvlvError::Truncated); }
+            if data.len() < 5 {
+                return Err(TvlvError::Truncated);
+            }
             let v = u32::from_le_bytes([data[1], data[2], data[3], data[4]]) as u64;
-            if v < 0x10000 { return Err(TvlvError::InvalidCompactSize); }
+            if v < 0x10000 {
+                return Err(TvlvError::InvalidCompactSize);
+            }
             Ok((v, 5))
         }
         0xFF => {
-            if data.len() < 9 { return Err(TvlvError::Truncated); }
+            if data.len() < 9 {
+                return Err(TvlvError::Truncated);
+            }
             let v = u64::from_le_bytes([
-                data[1], data[2], data[3], data[4],
-                data[5], data[6], data[7], data[8],
+                data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
             ]);
-            if v < 0x1_0000_0000 { return Err(TvlvError::InvalidCompactSize); }
+            if v < 0x1_0000_0000 {
+                return Err(TvlvError::InvalidCompactSize);
+            }
             Ok((v, 9))
         }
     }
@@ -254,11 +265,20 @@ mod tests {
     fn reject_duplicate_type() {
         // Manually build a memo with duplicate type 160
         let mut raw = vec![0xF7];
-        raw.push(160); raw.push(0); raw.push(1); raw.push(b'a');
-        raw.push(160); raw.push(0); raw.push(1); raw.push(b'b');
+        raw.push(160);
+        raw.push(0);
+        raw.push(1);
+        raw.push(b'a');
+        raw.push(160);
+        raw.push(0);
+        raw.push(1);
+        raw.push(b'b');
         raw.push(0x00);
         raw.resize(512, 0x00);
-        assert!(matches!(decode_tvlv(&raw), Err(TvlvError::DuplicatePartType(160))));
+        assert!(matches!(
+            decode_tvlv(&raw),
+            Err(TvlvError::DuplicatePartType(160))
+        ));
     }
 
     #[test]

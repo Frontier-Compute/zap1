@@ -36,7 +36,11 @@ fn memo_decode_rejects_wrong_length() {
 
 #[test]
 fn memo_type_roundtrip() {
-    for (byte, expected) in [(0x01, MemoType::ProgramEntry), (0x02, MemoType::OwnershipAttest), (0x09, MemoType::MerkleRoot)] {
+    for (byte, expected) in [
+        (0x01, MemoType::ProgramEntry),
+        (0x02, MemoType::OwnershipAttest),
+        (0x09, MemoType::MerkleRoot),
+    ] {
         let t = MemoType::from_u8(byte).unwrap();
         assert_eq!(t, expected);
         assert_eq!(t.as_u8(), byte);

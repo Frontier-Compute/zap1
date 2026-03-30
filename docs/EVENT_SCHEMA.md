@@ -23,7 +23,9 @@ payload = BLAKE2b-256("NordicShield_", 0x01 || wallet_hash_bytes)
 ```
 
 Fields:
-- `wallet_hash`: BLAKE2b-256 of participant's Zcash unified address (hex string, length-prefixed)
+- `wallet_hash`: BLAKE2b-256 of participant's Zcash unified address (raw bytes, no length prefix)
+
+Note: PROGRAM_ENTRY is the only type that does not length-prefix its field. All other types use 2-byte big-endian length prefixes.
 
 Issued when: payment received and confirmed for program entry.
 

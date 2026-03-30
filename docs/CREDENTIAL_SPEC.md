@@ -41,7 +41,8 @@ Verifier checks:
 - Each leaf hash is in the Merkle tree under the anchored root
 - Entry leaf predates the first payment leaf by at least 90 days
 - Payment leaves cover consecutive months
-- No EXIT leaf for this wallet hash exists in the tree
+
+Limitation: current proof system provides inclusion proofs only. "No EXIT leaf exists" cannot be proven cryptographically today. The verifier must either trust the operator's API for non-inclusion, or a future non-inclusion proof mechanism must be added. This is an open design problem.
 
 ### deployed_asset_verified
 
@@ -69,7 +70,8 @@ Proof structure:
 Verifier checks:
 - Both leaves are in the tree under the anchored root
 - The serial hash matches across both leaves
-- No TRANSFER or EXIT leaf exists for this serial after the deployment
+
+Limitation: "no TRANSFER or EXIT after deployment" requires non-inclusion proofs, which are not implemented. Same constraint as good_standing_90d. Verifier must trust API for negative claims until a non-inclusion mechanism ships.
 
 ### payments_current
 
@@ -96,7 +98,8 @@ Proof structure:
 
 Verifier checks:
 - Payment leaf is in the tree under the anchored root
-- The month/year in the leaf matches the claimed period
+
+Limitation: month/year are hashed into the leaf payload but not persisted separately in the current DB schema or proof bundle. The verifier cannot extract month/year from the leaf hash alone. This requires either: (a) extending proof bundles to include plaintext witness data alongside the hash, or (b) the prover supplies the preimage fields and the verifier recomputes the hash. Option (b) is the cleaner path and will be implemented in zap1-schema.
 - The anchor is recent enough to be meaningful (configurable staleness threshold)
 
 ## Privacy properties

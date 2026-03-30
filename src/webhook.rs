@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
 use tokio::time::{sleep, Duration};
 
 use crate::db::Db;

@@ -28,7 +28,6 @@ const BASE_BACKOFF_MINUTES: u64 = 5;
 /// Anchor subsystem state.
 struct AnchorState {
     consecutive_failures: AtomicU32,
-    last_check: tokio::sync::Mutex<Instant>,
     backoff_until: tokio::sync::Mutex<Option<Instant>>,
 }
 
@@ -36,7 +35,6 @@ impl AnchorState {
     fn new() -> Self {
         Self {
             consecutive_failures: AtomicU32::new(0),
-            last_check: tokio::sync::Mutex::new(Instant::now()),
             backoff_until: tokio::sync::Mutex::new(None),
         }
     }

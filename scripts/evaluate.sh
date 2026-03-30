@@ -60,6 +60,11 @@ check "simulator reachable" "$([ "$sim" = "200" ] && echo ok || echo "HTTP $sim"
 crate_ver=$(curl -sf "https://crates.io/api/v1/crates/zap1-verify" | python3 -c "import sys,json; print(json.load(sys.stdin)['crate']['max_version'])" 2>/dev/null || echo "error")
 check "zap1-verify on crates.io" "$([ -n "$crate_ver" ] && [ "$crate_ver" != "error" ] && echo ok || echo "$crate_ver")"
 
+# 9. events feed
+events_count=$(curl -sf "$API/events?limit=5" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_returned'])" 2>/dev/null || echo "0")
+check "events feed returns data" "$([ "$events_count" -gt 0 ] 2>/dev/null && echo ok || echo "$events_count")"
+
+# 10. crates.io
 memo_crate=$(curl -sf "https://crates.io/api/v1/crates/zcash-memo-decode" | python3 -c "import sys,json; print(json.load(sys.stdin)['crate']['max_version'])" 2>/dev/null || echo "error")
 check "zcash-memo-decode on crates.io" "$([ -n "$memo_crate" ] && [ "$memo_crate" != "error" ] && echo ok || echo "$memo_crate")"
 
@@ -74,7 +79,13 @@ if command -v cargo > /dev/null 2>&1; then
     check "zap1_audit verifies proof bundle" "$(echo "$audit_result" | grep -q "proof: ok" && echo ok || echo "$audit_result")"
   fi
 
-  # 11. schema validator
+  # 11. export -> offline audit loop
+  if [ -f examples/demo_audit_package.json ]; then
+    export_result=$(cargo run --quiet --bin zap1_audit -- --export examples/demo_audit_package.json 2>&1 | tail -1)
+    check "zap1_audit verifies export package" "$(echo "$export_result" | grep -q "0 fail" && echo ok || echo "$export_result")"
+  fi
+
+  # 12. schema validator
   if [ -f examples/schema_witness.json ]; then
     schema_result=$(cargo run --quiet --bin zap1_schema -- --witness examples/schema_witness.json 2>&1 | tail -1)
     check "zap1_schema validates witness" "$(echo "$schema_result" | grep -q "0 fail" && echo ok || echo "$schema_result")"

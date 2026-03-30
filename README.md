@@ -120,6 +120,27 @@ python3 scripts/check_anchor_liveness.py
 - `zip302_tvlv`: reference ZIP 302 TVLV encoder/decoder
 - `check_anchor_liveness.py`: nightly anchor freshness and consistency check
 
+Export profiles: `zap1_export --profile auditor|counterparty|member|regulator`
+Offline verify: `zap1_audit --export package.json`
+
+Consumer examples in `examples/`: wallet (Python), explorer (Python), indexer (bash).
+
+## API
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| /protocol/info | GET | protocol metadata |
+| /events?limit=N | GET | recent attestation feed |
+| /stats | GET | anchor and leaf counts |
+| /health | GET | scanner and node status |
+| /anchor/history | GET | all anchored roots |
+| /anchor/status | GET | current tree state |
+| /verify/{hash} | GET | proof page |
+| /verify/{hash}/check | GET | server-side verification |
+| /verify/{hash}/proof.json | GET | downloadable proof bundle |
+| /memo/decode | POST | universal memo classifier |
+| /lifecycle/{wallet_hash} | GET | events for a wallet |
+
 ## Ecosystem
 
 - **Verification SDK (Rust + WASM):** [Frontier-Compute/zap1-verify](https://github.com/Frontier-Compute/zap1-verify) - 22 tests
@@ -127,6 +148,8 @@ python3 scripts/check_anchor_liveness.py
 - **Attestation explorer:** [explorer.frontiercompute.io](https://explorer.frontiercompute.io)
 - **Lifecycle simulator:** [simulator.frontiercompute.io](https://simulator.frontiercompute.io)
 - **Browser verifier:** [frontiercompute.io/verify.html](https://frontiercompute.io/verify.html)
+- **Universal memo decoder:** [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode) - 23 tests, zero deps
+- **Browser memo decoder:** [frontiercompute.io/memo.html](https://frontiercompute.io/memo.html)
 - **Zaino gRPC:** validated on mainnet - [ZAINO_VALIDATION.md](ZAINO_VALIDATION.md)
 
 ## FROST Threshold Signing

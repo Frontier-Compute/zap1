@@ -803,7 +803,7 @@ async fn proof_bundle_json(
 
     Ok(Json(serde_json::json!({
         "protocol": "ZAP1",
-        "version": "1.0.0",
+        "version": "2",
         "leaf": {
             "hash": bundle.leaf.leaf_hash,
             "event_type": bundle.leaf.event_type.label(),

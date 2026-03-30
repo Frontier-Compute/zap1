@@ -1,0 +1,21 @@
+warning: field `root` is never read
+  --> src/bin/zaino_adapter.rs:27:5
+   |
+24 | struct AnchorRecord {
+   |        ------------ field in this struct
+...
+27 |     root: String,
+   |     ^^^^
+   |
+   = note: `AnchorRecord` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+zaino adapter: connecting to http://127.0.0.1:8137
+anchors from API: 3
+zaino chain tip: 3291003
+  pass: anchor block=3286631 txid=98e1d6a01614.. leaves=2 tx_bytes=9165
+  pass: anchor block=3287612 txid=3c764a810f46.. leaves=12 tx_bytes=9165
+  pass: anchor block=3288022 txid=dfab64cd1114.. leaves=12 tx_bytes=9165
+  range: streamed 1392 blocks from 3286631 to 3288022 via zaino
+
+result: 3 pass, 0 fail, 3 total anchors

@@ -12,7 +12,7 @@ Usage:
 The proof JSON file should contain an array of steps:
   [{"hash": "aabb...", "position": "left|right"}, ...]
 
-Supports all 9 NSM1 event types (ONCHAIN_PROTOCOL.md v2.0.0):
+Supports all 9 ZAP1 event types (ONCHAIN_PROTOCOL.md v2.0.0):
   0x01 PROGRAM_ENTRY, 0x02 OWNERSHIP_ATTEST, 0x03 CONTRACT_ANCHOR,
   0x04 DEPLOYMENT, 0x05 HOSTING_PAYMENT, 0x06 SHIELD_RENEWAL,
   0x07 TRANSFER, 0x08 EXIT, 0x09 MERKLE_ROOT
@@ -139,7 +139,7 @@ def compute_leaf(args) -> tuple:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Nordic Shield Merkle Proof Verifier (all 9 NSM1 event types)")
+    parser = argparse.ArgumentParser(description="Nordic Shield Merkle Proof Verifier (all 9 ZAP1 event types)")
     parser.add_argument("--leaf-hash", help="Hex-encoded leaf hash (if known)")
     parser.add_argument("--event-type", help="Event type: PROGRAM_ENTRY, OWNERSHIP_ATTEST, CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT")
     parser.add_argument("--wallet-hash", help="Wallet hash string")

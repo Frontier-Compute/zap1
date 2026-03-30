@@ -1,16 +1,16 @@
-# Contributing to nsm1
+# Contributing to zap1
 
 ## Overview
 
-nsm1 is the reference implementation and on-chain attestation engine for the NSM1 protocol. Contributions that improve the protocol, scanner, verification surfaces, or documentation are welcome.
+zap1 is the reference implementation and on-chain attestation engine for the ZAP1 protocol. Contributions that improve the protocol, scanner, verification surfaces, or documentation are welcome.
 
 ## Getting Started
 
 ```bash
-git clone https://github.com/Frontier-Compute/nsm1.git
-cd nsm1
-docker build --target builder -t nsm1-test .
-docker run --rm nsm1-test cargo test --release --test memo_merkle_test
+git clone https://github.com/Frontier-Compute/zap1.git
+cd zap1
+docker build --target builder -t zap1-test .
+docker run --rm zap1-test cargo test --release --test memo_merkle_test
 ```
 
 ## Code Style
@@ -30,7 +30,7 @@ docker run --rm nsm1-test cargo test --release --test memo_merkle_test
 
 ## Protocol Changes
 
-Changes to the NSM1 memo protocol (event types, hash construction, Merkle tree rules) require updating:
+Changes to the ZAP1 memo protocol (event types, hash construction, Merkle tree rules) require updating:
 - `ONCHAIN_PROTOCOL.md`
 - `verify_proof.py`
 - Test vectors in `tests/`

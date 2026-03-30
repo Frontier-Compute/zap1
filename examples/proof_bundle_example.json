@@ -28,7 +28,7 @@
             "position": "right"
         }
     ],
-    "protocol": "NSM1",
+    "protocol": "ZAP1",
     "root": {
         "created_at": "2026-03-27T23:13:00.465042404+00:00",
         "hash": "a5b78c57b062f2e632fd40e8fbbdaf59ab7e527b860cf7db2385bc180cbbf362",

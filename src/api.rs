@@ -647,7 +647,7 @@ async fn proof_bundle_json(
     }).collect();
 
     Ok(Json(serde_json::json!({
-        "protocol": "NSM1",
+        "protocol": "ZAP1",
         "version": "1.0.0",
         "leaf": {
             "hash": bundle.leaf.leaf_hash,
@@ -675,7 +675,7 @@ async fn proof_bundle_json(
     })))
 }
 
-/// Server-side Merkle proof verification using nsm1-verify SDK.
+/// Server-side Merkle proof verification using zap1-verify SDK.
 async fn verify_check(
     State(state): State<AppState>,
     Path(leaf_hash): Path<String>,
@@ -686,26 +686,26 @@ async fn verify_check(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Leaf not found".to_string()))?;
 
-    // Convert proof steps to nsm1_verify types
-    let leaf_bytes = nsm1_verify::hex_to_bytes32(&bundle.leaf.leaf_hash)
+    // Convert proof steps to zap1_verify types
+    let leaf_bytes = zap1_verify::hex_to_bytes32(&bundle.leaf.leaf_hash)
         .ok_or((StatusCode::BAD_REQUEST, "Invalid leaf hash hex".to_string()))?;
-    let root_bytes = nsm1_verify::hex_to_bytes32(&bundle.root.root_hash)
+    let root_bytes = zap1_verify::hex_to_bytes32(&bundle.root.root_hash)
         .ok_or((StatusCode::BAD_REQUEST, "Invalid root hash hex".to_string()))?;
 
-    let proof_steps: Vec<nsm1_verify::ProofStep> = bundle
+    let proof_steps: Vec<zap1_verify::ProofStep> = bundle
         .proof
         .iter()
         .map(|s| {
-            let hash = nsm1_verify::hex_to_bytes32(&s.hash).unwrap_or([0u8; 32]);
+            let hash = zap1_verify::hex_to_bytes32(&s.hash).unwrap_or([0u8; 32]);
             let position = match format!("{:?}", s.position).to_lowercase().as_str() {
-                "left" => nsm1_verify::SiblingPosition::Left,
-                _ => nsm1_verify::SiblingPosition::Right,
+                "left" => zap1_verify::SiblingPosition::Left,
+                _ => zap1_verify::SiblingPosition::Right,
             };
-            nsm1_verify::ProofStep { hash, position }
+            zap1_verify::ProofStep { hash, position }
         })
         .collect();
 
-    let valid = nsm1_verify::verify_proof(&leaf_bytes, &proof_steps, &root_bytes);
+    let valid = zap1_verify::verify_proof(&leaf_bytes, &proof_steps, &root_bytes);
 
     Ok(Json(serde_json::json!({
         "valid": valid,
@@ -717,7 +717,7 @@ async fn verify_check(
             "height": bundle.root.anchor_height,
         },
         "server_verified": true,
-        "verification_sdk": "nsm1-verify",
+        "verification_sdk": "zap1-verify",
     })))
 }
 
@@ -763,7 +763,7 @@ async fn anchor_history(
 /// Protocol metadata for ecosystem discovery.
 async fn protocol_info() -> Json<serde_json::Value> {
     Json(serde_json::json!({
-        "protocol": "NSM1",
+        "protocol": "ZAP1",
         "version": "2.2.0",
         "event_types": 12,
         "deployed_types": 9,
@@ -772,13 +772,13 @@ async fn protocol_info() -> Json<serde_json::Value> {
         "hash_function": "BLAKE2b-256",
         "leaf_personalization": "NordicShield_",
         "node_personalization": "NordicShield_MRK",
-        "verification_sdk": "nsm1-verify (Rust + WASM)",
-        "verification_sdk_repo": "https://github.com/Frontier-Compute/nsm1-verify",
+        "verification_sdk": "zap1-verify (Rust + WASM)",
+        "verification_sdk_repo": "https://github.com/Frontier-Compute/zap1-verify",
         "frost_status": "design_complete",
         "frost_ciphersuite": "FROST(Pallas, BLAKE2b-512)",
         "frost_threshold": "2-of-3",
         "zip_status": "draft",
-        "specification": "https://github.com/Frontier-Compute/nsm1/blob/main/ONCHAIN_PROTOCOL.md",
+        "specification": "https://github.com/Frontier-Compute/zap1/blob/main/ONCHAIN_PROTOCOL.md",
     }))
 }
 
@@ -808,7 +808,7 @@ fn svg_badge(label: &str, value: &str, color: &str) -> String {
 }
 
 /// Dynamic SVG badge showing protocol status.
-/// Embed: ![NSM1](https://pay.frontiercompute.io/badge/status.svg)
+/// Embed: ![ZAP1](https://pay.frontiercompute.io/badge/status.svg)
 async fn badge_status(
     State(state): State<AppState>,
 ) -> (StatusCode, [(axum::http::header::HeaderName, &'static str); 2], String) {
@@ -823,7 +823,7 @@ async fn badge_status(
         _ => (0, 0),
     };
 
-    let svg = svg_badge("NSM1", &format!("{} leaves | {} anchors", leaves, anchors), "#c8a84e");
+    let svg = svg_badge("ZAP1", &format!("{} leaves | {} anchors", leaves, anchors), "#c8a84e");
 
     (
         StatusCode::OK,
@@ -848,7 +848,7 @@ async fn badge_leaf(
         ("not found", "#e05d44")
     };
 
-    let svg = svg_badge("NSM1 leaf", value, color);
+    let svg = svg_badge("ZAP1 leaf", value, color);
 
     (
         StatusCode::OK,
@@ -862,7 +862,7 @@ async fn badge_leaf(
 
 /// Build provenance: version, dependencies, reproducibility metadata.
 async fn build_info() -> Json<serde_json::Value> {
-    let build_info = std::fs::read_to_string("/usr/local/share/nsm1/BUILD_INFO")
+    let build_info = std::fs::read_to_string("/usr/local/share/zap1/BUILD_INFO")
         .unwrap_or_else(|_| "not available (dev build)".to_string());
     Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -913,7 +913,7 @@ async fn register_webhook(
         "id": id,
         "url": req.url,
         "secret": secret,
-        "note": "Store the secret. Use it to verify X-NSM1-Signature headers on deliveries.",
+        "note": "Store the secret. Use it to verify X-ZAP1-Signature headers on deliveries.",
     }))))
 }
 
@@ -1076,7 +1076,7 @@ async fn stats(
         "first_anchor_block": first_height,
         "last_anchor_block": last_height,
         "network": network,
-        "protocol": "NSM1",
+        "protocol": "ZAP1",
         "event_types": type_names.iter().map(|(_, n)| n).collect::<Vec<_>>(),
         "type_counts": type_counts,
     })))

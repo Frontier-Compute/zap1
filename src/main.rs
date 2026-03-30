@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
-use nsm1::{anchor, api, config, db, foreman, keys, node, scanner};
+use zap1::{anchor, api, config, db, foreman, keys, node, scanner};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    tracing::info!("nsm1 v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("zap1 v{}", env!("CARGO_PKG_VERSION"));
 
     let config = Arc::new(config::Config::from_env()?);
     tracing::info!("Network: {:?}", config.network);

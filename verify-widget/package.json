@@ -1,7 +1,7 @@
 {
   "name": "@frontier-compute/verify-widget",
   "version": "1.0.0",
-  "description": "Zero-trust in-browser Merkle proof verifier for the Nordic Shield on-chain protocol (NSM1)",
+  "description": "Zero-trust in-browser Merkle proof verifier for the Nordic Shield on-chain protocol (ZAP1)",
   "type": "module",
   "main": "blake2b.js",
   "exports": {
@@ -21,14 +21,14 @@
     "proof",
     "verification",
     "nordic-shield",
-    "nsm1",
+    "zap1",
     "zero-trust"
   ],
   "author": "zk_nd3r <zk_nd3r@frontiercompute.io>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Frontier-Compute/nsm1",
+    "url": "https://github.com/Frontier-Compute/zap1",
     "directory": "verify-widget"
   },
   "peerDependencies": {

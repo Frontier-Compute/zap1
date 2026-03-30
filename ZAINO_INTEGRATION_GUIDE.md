@@ -60,14 +60,14 @@ zainod start --config zainod.toml
 ```
 
 4. Wait for Zaino to initialize and begin indexing.
-5. Point `nsm1` at Zaino by setting `ZAINO_GRPC_URL`.
+5. Point `zap1` at Zaino by setting `ZAINO_GRPC_URL`.
 
 Notes:
 
 - `validator_jsonrpc_listen_address` must match Zebra’s actual RPC port. In this deployment that is `127.0.0.1:8232`, not Zebra’s older default `18232`.
 - Zaino does not replace Zebra. It sits alongside Zebra and re-exposes chain data over gRPC in a lightwalletd-compatible form.
 
-## 3. Backend Switching in nsm1
+## 3. Backend Switching in zap1
 
 Backend selection is env-driven.
 
@@ -92,7 +92,7 @@ pub fn create_backend(config: &crate::config::Config) -> Box<dyn NodeBackend> {
 
 In `src/main.rs` the scanner backend is created once at startup and passed into the scan loop.
 
-To switch `nsm1` to Zaino:
+To switch `zap1` to Zaino:
 
 ```bash
 export ZAINO_GRPC_URL=http://127.0.0.1:8137
@@ -105,7 +105,7 @@ To stay on direct Zebra RPC:
 
 Important current behavior:
 
-- if `ZAINO_GRPC_URL` is set, `nsm1` uses Zaino
+- if `ZAINO_GRPC_URL` is set, `zap1` uses Zaino
 - otherwise it falls back to Zebra RPC
 
 ## 4. NodeBackend Architecture
@@ -188,13 +188,13 @@ Practical summary:
 - Zaino should reduce bandwidth and request overhead, especially during catch-up and sustained polling
 - the exact gain depends on chain activity, mempool size, and how often raw tx fetches remain necessary after adapter tuning
 
-## 6. Migration Steps for nsm1
+## 6. Migration Steps for zap1
 
 Recommended migration path:
 
 1. Run Zaino in parallel with Zebra.
-2. Keep production `nsm1` on Zebra RPC first.
-3. Start a staging `nsm1` instance with:
+2. Keep production `zap1` on Zebra RPC first.
+3. Start a staging `zap1` instance with:
 
 ```bash
 export ZAINO_GRPC_URL=http://127.0.0.1:8137
@@ -214,7 +214,7 @@ export ZEBRA_RPC_URL=http://127.0.0.1:8232
 Rollback is trivial:
 
 - unset `ZAINO_GRPC_URL`
-- restart `nsm1`
+- restart `zap1`
 
 ## 7. Migration Steps for Other Zcash App Builders
 
@@ -246,6 +246,6 @@ Current deployment-specific values from the existing config:
 - Zaino DB: configured per deployment
 - Zaino gRPC: `127.0.0.1:8137`
 - Zebra RPC consumed by Zaino: `127.0.0.1:8232`
-- `nsm1` backend switch env var: `ZAINO_GRPC_URL`
+- `zap1` backend switch env var: `ZAINO_GRPC_URL`
 
 These values are deployment-specific, but the architecture is general.

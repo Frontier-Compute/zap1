@@ -8,7 +8,7 @@
 
 Nordic Shield uses the Zcash blockchain as the source of truth for program operations. Every significant program event is represented as a structured memo commitment and aggregated into a BLAKE2b Merkle tree whose root is periodically anchored to Zcash. Participants verify ownership, deployment, hosting history, renewal history, transfer history, and exit history from the chain record plus Merkle proofs, with no trust required in a private operator database.
 
-This protocol is the open technical layer beneath the Nordic Shield commercial program. It is implemented through the NSM1 reference implementation, related verifier tooling, and the operating procedures described here. No participant PII is recorded on-chain; only wallet hashes, serial hashes, and derived payload hashes are used.
+This protocol is the open technical layer beneath the Nordic Shield commercial program. It is implemented through the ZAP1 reference implementation, related verifier tooling, and the operating procedures described here. No participant PII is recorded on-chain; only wallet hashes, serial hashes, and derived payload hashes are used.
 
 Mainnet proof reference:
 
@@ -19,7 +19,7 @@ Mainnet proof reference:
 ## 2. Memo Protocol
 
 This binary layout is a transitional encoding. When ZIP 302 (Structured Memos)
-ships, NSM1 payloads should be carried as a ZIP 302 part type. The attestation
+ships, ZAP1 payloads should be carried as a ZIP 302 part type. The attestation
 semantics below (event types, hash construction, Merkle rules) are independent
 of the memo container.
 
@@ -38,12 +38,12 @@ bytes 78..n : note               = UTF-8 human-readable note, optional
 For human-readable transport, the shielded memo payload is rendered as:
 
 ```text
-NSM1:{type}:{payload}
+ZAP1:{type}:{payload}
 ```
 
 Where:
 
-- `NSM1` is the protocol marker
+- `ZAP1` is the protocol marker
 - `{type}` is the two-digit lowercase hex type byte
 - `{payload}` is the hex encoding of the binary layout above
 
@@ -137,7 +137,7 @@ Anchor rules:
 Operational flow:
 
 1. The reference implementation reads the latest root from the Merkle store.
-2. The root is encoded as an `NSM1:09` memo.
+2. The root is encoded as an `ZAP1:09` memo.
 3. A dust self-transfer or controlled shielded transfer is broadcast with that memo.
 4. The txid becomes the public proof handle for that committed root.
 5. When mined, the block height is recorded alongside the root.
@@ -154,7 +154,7 @@ Participant verification flow:
 4. Walk the proof path to recompute the root.
 5. Confirm the derived root equals the displayed root.
 6. Open the anchor txid in a Zcash explorer or with local node tooling.
-7. Confirm the memo contains the matching `NSM1:09` root commitment.
+7. Confirm the memo contains the matching `ZAP1:09` root commitment.
 8. Confirm the transaction is mined at the stated block height on Zcash mainnet.
 
 CLI verification can be implemented as:
@@ -348,15 +348,15 @@ Dashboard notes:
 
 ## 14. Profiles
 
-NSM1 defines a base profile and reserves extension points for future proving and credential systems.
+ZAP1 defines a base profile and reserves extension points for future proving and credential systems.
 
-### NSM1 Base Profile (current, deployed)
+### ZAP1 Base Profile (current, deployed)
 
 Deterministic hash-and-Merkle attestation. Event payloads are hashed with BLAKE2b-256 using domain-separated personalization. Leaves are aggregated into a Merkle tree. Roots are anchored to Zcash via shielded memos. Verification: recompute hash, walk Merkle path, check anchor.
 
 This profile is stable. All existing proof bundles, test vectors, and verification tools target the base profile.
 
-### NSM1 Proof Profile (reserved)
+### ZAP1 Proof Profile (reserved)
 
 Optional ZK proof attachment for proof-carrying attestation. When present, a `proof_commitment` field in the event bundle binds a zero-knowledge proof to the leaf hash. The proof attests that the payload was correctly derived from private inputs matching a declared schema, without revealing those inputs.
 
@@ -367,11 +367,11 @@ The proof profile is proving-system agnostic. Implementations may use any system
 
 The base profile leaf hash remains unchanged. The proof commitment is an optional extension that verification tools may check when present and ignore when absent.
 
-### NSM1 Credential Profile (reserved)
+### ZAP1 Credential Profile (reserved)
 
 Derive privacy-preserving credentials from attestation history. A participant with N lifecycle events committed to the Merkle tree can prove properties of their history (e.g., "participant for 6+ months", "all hosting payments current") without revealing their wallet hash or specific events.
 
-This profile enables cross-operator credential portability: a credential derived from one NSM1 deployment can be verified against the anchored Merkle root without contacting the issuing operator.
+This profile enables cross-operator credential portability: a credential derived from one ZAP1 deployment can be verified against the anchored Merkle root without contacting the issuing operator.
 
 The credential profile depends on the proof profile and is not expected to deploy before proving system integration stabilizes.
 
@@ -381,4 +381,4 @@ The credential profile depends on the proof profile and is not expected to deplo
 - New event types are allocated by incrementing the type byte. Types 0x0D - 0xFF are reserved.
 - Profiles are namespaced: `base`, `proof`, `credential`. New profiles do not modify the base profile.
 - Hash construction rules for the base profile are frozen at v2.2.0. Changes require a new major version.
-- The `NordicShield_` personalization is deployment-specific. Other deployments may use different personalization strings without conflicting with the protocol specification. The nsm1-verify SDK (v0.2.0+) accepts configurable personalization.
+- The `NordicShield_` personalization is deployment-specific. Other deployments may use different personalization strings without conflicting with the protocol specification. The zap1-verify SDK (v0.2.0+) accepts configurable personalization.

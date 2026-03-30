@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
 use blake2b_simd::Params;
 
-const MEMO_PREFIX: &str = "NSM1";
+const MEMO_PREFIX: &str = "ZAP1";
+/// Legacy prefix accepted during decoding for backward compatibility.
+const LEGACY_MEMO_PREFIX: &str = "NSM1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoType {
@@ -97,7 +99,7 @@ impl StructuredMemo {
     pub fn decode(input: &str) -> Result<Self> {
         let mut parts = input.split(':');
         let prefix = parts.next().ok_or_else(|| anyhow!("missing memo prefix"))?;
-        if prefix != MEMO_PREFIX {
+        if prefix != MEMO_PREFIX && prefix != LEGACY_MEMO_PREFIX {
             return Err(anyhow!("unexpected memo prefix: {prefix}"));
         }
 

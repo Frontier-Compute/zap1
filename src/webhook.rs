@@ -1,4 +1,4 @@
-//! Webhook delivery system for NSM1 lifecycle events.
+//! Webhook delivery system for ZAP1 lifecycle events.
 //!
 //! Register URLs to receive POST notifications when leaves are created
 //! or anchors are confirmed. Payloads are signed with a keyed BLAKE2b MAC.
@@ -79,7 +79,7 @@ async fn deliver_with_retry(client: &reqwest::Client, url: &str, payload: &str, 
         let result = client
             .post(url)
             .header("Content-Type", "application/json")
-            .header("X-NSM1-Signature", signature)
+            .header("X-ZAP1-Signature", signature)
             .body(payload.to_string())
             .send()
             .await;
@@ -107,7 +107,7 @@ async fn deliver_with_retry(client: &reqwest::Client, url: &str, payload: &str, 
 fn compute_mac(secret: &str, payload: &str) -> String {
     let hash = blake2b_simd::Params::new()
         .hash_length(32)
-        .personal(b"NSM1_webhook_sig")
+        .personal(b"ZAP1_webhook_sig")
         .key(secret.as_bytes())
         .to_state()
         .update(payload.as_bytes())

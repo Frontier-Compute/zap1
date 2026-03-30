@@ -387,7 +387,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
         <h3 style={s.title}>Proof Verifier</h3>
         {bundle && (
           <span style={s.protocolTag}>
-            {bundle.protocol || "NSM1"} v{bundle.version || "1"}
+            {bundle.protocol || "ZAP1"} v{bundle.version || "1"}
           </span>
         )}
       </div>

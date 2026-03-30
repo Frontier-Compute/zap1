@@ -4,7 +4,7 @@
 
 Wyoming Statute 17-31-104(c) requires a DAO LLC to identify a "smart contract" or equivalent on-chain artifact that governs or records the entity's operations.
 
-## How NSM1 Satisfies This
+## How ZAP1 Satisfies This
 
 LiquidLV DAO LLC (Wyoming) uses the following Zcash Orchard address as its Section VI identifier:
 
@@ -12,7 +12,7 @@ LiquidLV DAO LLC (Wyoming) uses the following Zcash Orchard address as its Secti
 u1qzfssuy2n2puqvafzjtq6qvjul7e985u75xsrnppcpd5c0sujs727xngaecx5yt4ljy6qlkr8hxsvj6d8gmxd7g6c9p3993hh5zwenq7
 ```
 
-This is diversifier index 2 of the anchor UFVK. All NSM1 Merkle root commitments are broadcast as shielded memo transactions from this address.
+This is diversifier index 2 of the anchor UFVK. All ZAP1 Merkle root commitments are broadcast as shielded memo transactions from this address.
 
 ## What It Proves
 
@@ -28,7 +28,7 @@ The on-chain anchor history provides:
 1. Check the anchor history: `https://pay.frontiercompute.io/anchor/history`
 2. Verify a specific proof: `https://pay.frontiercompute.io/verify/{leaf_hash}/check`
 3. Confirm the anchor transaction on any Zcash explorer using the txid
-4. Use `verify_proof.py` from the [nsm1 repo](https://github.com/Frontier-Compute/nsm1) for independent verification
+4. Use `verify_proof.py` from the [zap1 repo](https://github.com/Frontier-Compute/zap1) for independent verification
 
 ## Why Zcash
 

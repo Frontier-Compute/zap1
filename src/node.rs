@@ -1,4 +1,4 @@
-//! Node backend abstraction for nsm1 scanner.
+//! Node backend abstraction for zap1 scanner.
 //!
 //! Provides a trait `NodeBackend` that the scanner uses to fetch chain data.
 //! Two implementations:

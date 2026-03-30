@@ -1,4 +1,4 @@
-# NSM1 Test Vectors
+# ZAP1 Test Vectors
 
 Date: 2026-03-28
 Status: Protocol specification deliverable
@@ -9,7 +9,7 @@ Sources:
 - `src/memo.rs`
 - `ONCHAIN_PROTOCOL.md`
 
-This document publishes a standalone JSON test vector suite for the nine deployed NSM1 event types (`0x01` through `0x09`).
+This document publishes a standalone JSON test vector suite for the nine deployed ZAP1 event types (`0x01` through `0x09`).
 
 Hash rules:
 
@@ -28,16 +28,16 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 
 ```json
 {
-  "suite": "NSM1 deployed event vectors",
+  "suite": "ZAP1 deployed event vectors",
   "version": "2026-03-28",
   "leaf_hash_function": "BLAKE2b-256",
   "leaf_personalization": "NordicShield_",
   "node_hash_function": "BLAKE2b-256",
   "node_personalization": "NordicShield_MRK",
   "source_files": [
-    "nsm1/tests/memo_merkle_test.rs",
+    "zap1/tests/memo_merkle_test.rs",
     "verify_proof.py",
-    "nsm1/src/memo.rs",
+    "zap1/src/memo.rs",
     "ONCHAIN_PROTOCOL.md"
   ],
   "vectors": [
@@ -149,5 +149,5 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 ## Notes
 
 - The sample values are deterministic and can be recomputed with the hash functions in `verify_proof.py`.
-- Any implementation can use these vectors to confirm leaf construction matches NSM1.
-- `MERKLE_ROOT` is included because it is one of the nine deployed NSM1 event types, but it is not hashed the same way as `0x01` through `0x08`.
+- Any implementation can use these vectors to confirm leaf construction matches ZAP1.
+- `MERKLE_ROOT` is included because it is one of the nine deployed ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`.

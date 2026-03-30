@@ -49,7 +49,7 @@ impl Config {
         let listen_addr =
             std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3080".to_string());
 
-        let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| "/data/nsm1.db".to_string());
+        let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| "/data/zap1.db".to_string());
 
         let scan_from_height: u32 = std::env::var("SCAN_FROM_HEIGHT")
             .unwrap_or_else(|_| "0".to_string())

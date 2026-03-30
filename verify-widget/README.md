@@ -1,6 +1,6 @@
 # verify-widget
 
-Zero-trust in-browser Merkle proof verifier for the Nordic Shield on-chain protocol (NSM1).
+Zero-trust in-browser Merkle proof verifier for the Nordic Shield on-chain protocol (ZAP1).
 
 All verification runs client-side. No server involved. BLAKE2b-256 with Nordic Shield personalizations, Merkle path walking, and root comparison - entirely in the browser.
 
@@ -73,7 +73,7 @@ Response includes `leaf`, `proof` (sibling array), `root`, `anchor` (txid + bloc
 
 ## Protocol
 
-See [ONCHAIN_PROTOCOL.md](../ONCHAIN_PROTOCOL.md) for the full NSM1 specification.
+See [ONCHAIN_PROTOCOL.md](../ONCHAIN_PROTOCOL.md) for the full ZAP1 specification.
 
 ## License
 

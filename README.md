@@ -1,6 +1,6 @@
-# nsm1
+# zap1
 
-Reference implementation for the NSM1 lifecycle attestation protocol on Zcash.
+Reference implementation for the ZAP1 lifecycle attestation protocol on Zcash.
 
 Built for [Nordic Shield](https://nordicshield.frontiercompute.io)  - privacy-shielded mining infrastructure operated by [Frontier Compute](https://frontiercompute.io).
 
@@ -12,7 +12,7 @@ Built for [Nordic Shield](https://nordicshield.frontiercompute.io)  - privacy-sh
 
 ## Protocol
 
-Twelve memo types are defined in NSM1. Nine are deployed and three are
+Twelve memo types are defined in ZAP1. Nine are deployed and three are
 reserved for Crosslink:
 
 | Type | Name | Trigger |
@@ -77,7 +77,7 @@ docker compose -f docker-compose.mainnet.yml up -d
 | GET | /health |  - | Scanner health JSON |
 | GET | /anchor/status |  - | Current anchor scheduler and pending-root status |
 | GET | /anchor/history |  - | Historical root anchors and transaction references |
-| GET | /protocol/info |  - | NSM1 protocol metadata, event types, and versioning |
+| GET | /protocol/info |  - | ZAP1 protocol metadata, event types, and versioning |
 | POST | /auto-invoice | Bearer | Create or deduplicate recurring billing invoices |
 | GET | /cohort |  - | Cohort-level revenue and participant metrics |
 | GET | /admin/overview |  - | Aggregated admin dashboard data |
@@ -95,14 +95,14 @@ python3 verify_proof.py \
 ## Verification SDK
 
 The standalone Rust + WASM verifier is published at
-[`Frontier-Compute/nsm1-verify`](https://github.com/Frontier-Compute/nsm1-verify).
-It implements NSM1 leaf hashing, Merkle proof walking, and browser-friendly
+[`Frontier-Compute/zap1-verify`](https://github.com/Frontier-Compute/zap1-verify).
+It implements ZAP1 leaf hashing, Merkle proof walking, and browser-friendly
 verification primitives without depending on the reference implementation server.
 
 ## Ecosystem
 
-- **Verification SDK (Rust + WASM):** [nsm1-verify on crates.io](https://crates.io/crates/nsm1-verify) - 22 tests
-- **JS/TS SDK:** [@frontiercompute/nsm1 on npm](https://www.npmjs.com/package/@frontiercompute/nsm1) - 19 tests
+- **Verification SDK (Rust + WASM):** [zap1-verify on crates.io](https://crates.io/crates/zap1-verify) - 22 tests
+- **JS/TS SDK:** [@frontiercompute/zap1 on npm](https://www.npmjs.com/package/@frontiercompute/zap1) - 19 tests
 - **Attestation explorer:** [explorer.frontiercompute.io](https://explorer.frontiercompute.io)
 - **Lifecycle simulator:** [simulator.frontiercompute.io](https://simulator.frontiercompute.io)
 - **Browser verifier:** [frontiercompute.io/verify.html](https://frontiercompute.io/verify.html)
@@ -117,7 +117,7 @@ implementation of the 2-of-3 Pallas signing round is published in
 
 ## ZIP Proposal
 
-A draft ZIP for the NSM1 attestation format is open at [zcash/zips PR #1243](https://github.com/zcash/zips/pull/1243). It defines the event type registry, hash construction rules, Merkle tree aggregation, and verification procedure. The memo container relationship to ZIP 302 (Structured Memos) is documented in the draft.
+A draft ZIP for the ZAP1 attestation format is open at [zcash/zips PR #1243](https://github.com/zcash/zips/pull/1243). It defines the event type registry, hash construction rules, Merkle tree aggregation, and verification procedure. The memo container relationship to ZIP 302 (Structured Memos) is documented in the draft.
 
 ## Run tests
 

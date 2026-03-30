@@ -1497,7 +1497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "549e471b99ccaf2f89101bec68f4d244457d5a95a9c3d0672e9564124397741d"
 
 [[package]]
-name = "nsm1"
+name = "zap1"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1506,7 +1506,7 @@ dependencies = [
  "blake2b_simd",
  "chrono",
  "hex",
- "nsm1-verify",
+ "zap1-verify",
  "orchard",
  "prost 0.13.5",
  "qrcode",
@@ -1530,7 +1530,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nsm1-verify"
+name = "zap1-verify"
 version = "0.2.0"
 dependencies = [
  "blake2b_simd",

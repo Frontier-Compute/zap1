@@ -1,7 +1,7 @@
-//! nsm1-verify - Standalone Merkle proof verifier for the NSM1 protocol.
+//! zap1-verify - Standalone Merkle proof verifier for the ZAP1 protocol.
 //!
 //! Zero-trust verification of Nordic Shield on-chain commitments.
-//! Implements BLAKE2b-256 leaf hashing for all 9 NSM1 event types
+//! Implements BLAKE2b-256 leaf hashing for all 9 ZAP1 event types
 //! and Merkle proof path walking with `NordicShield_MRK` node personalization.
 //!
 //! Only dependency: `blake2b_simd`.
@@ -17,14 +17,14 @@ pub const DEFAULT_LEAF_PERSONAL: &[u8; 13] = b"NordicShield_";
 /// BLAKE2b-256 personalization for Merkle node hashing.
 pub const DEFAULT_NODE_PERSONAL: &[u8; 16] = b"NordicShield_MRK";
 
-/// Domain-separation strings used for NSM1 leaf and Merkle hashing.
+/// Domain-separation strings used for ZAP1 leaf and Merkle hashing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Personalization<'a> {
     pub leaf: &'a [u8],
     pub node: &'a [u8],
 }
 
-/// Default NSM1 personalization values.
+/// Default ZAP1 personalization values.
 pub const DEFAULT_PERSONALIZATION: Personalization<'static> = Personalization {
     leaf: DEFAULT_LEAF_PERSONAL,
     node: DEFAULT_NODE_PERSONAL,
@@ -32,7 +32,7 @@ pub const DEFAULT_PERSONALIZATION: Personalization<'static> = Personalization {
 
 // Types
 
-/// NSM1 event type bytes.
+/// ZAP1 event type bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum EventType {
@@ -65,7 +65,7 @@ impl EventType {
     }
 }
 
-/// Typed payload for computing an NSM1 leaf hash.
+/// Typed payload for computing an ZAP1 leaf hash.
 ///
 /// All byte-slice fields are UTF-8 encoded strings (wallet hashes, serial
 /// numbers, facility IDs, hex-encoded contract SHA-256 digests).
@@ -179,7 +179,7 @@ fn push_len_prefixed(buf: &mut Vec<u8>, field: &[u8]) {
     buf.extend_from_slice(field);
 }
 
-/// Compute the leaf hash for an NSM1 event.
+/// Compute the leaf hash for an ZAP1 event.
 ///
 /// Returns the 32-byte BLAKE2b-256 digest for types 0x01 - 0x08,
 /// or the raw root bytes for type 0x09 (`MERKLE_ROOT`).
@@ -187,9 +187,9 @@ pub fn compute_leaf_hash(payload: &EventPayload) -> [u8; 32] {
     compute_leaf_hash_with_personalization(payload, None)
 }
 
-/// Compute the leaf hash for an NSM1 event with an optional custom personalization.
+/// Compute the leaf hash for an ZAP1 event with an optional custom personalization.
 ///
-/// Passing `None` preserves the deployed NSM1 defaults.
+/// Passing `None` preserves the deployed ZAP1 defaults.
 pub fn compute_leaf_hash_with_personalization(
     payload: &EventPayload,
     personalization: Option<&Personalization<'_>>,

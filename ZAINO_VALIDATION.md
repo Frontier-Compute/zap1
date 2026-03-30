@@ -24,7 +24,7 @@ Status: Validated on mainnet
 
 ## Anchor Verification via Zaino
 
-The latest anchor (txid ba63e44f9589c63baaebae25eb0c369bf59a7d4db559f6b51cf8a2b27fc7793b, block 3,290,002) was retrieved via Zaino gRPC, confirming the dual-backend path works for NSM1 anchor verification.
+The latest anchor (txid ba63e44f9589c63baaebae25eb0c369bf59a7d4db559f6b51cf8a2b27fc7793b, block 3,290,002) was retrieved via Zaino gRPC, confirming the dual-backend path works for ZAP1 anchor verification.
 
 ## Dual Backend Summary
 
@@ -33,4 +33,4 @@ The latest anchor (txid ba63e44f9589c63baaebae25eb0c369bf59a7d4db559f6b51cf8a2b2
 | Zebra RPC | 8232 | JSON-RPC | Current production scanner (polling getblock) |
 | Zaino gRPC | 8137 | CompactTxStreamer | Compact block streaming (validated, integration target) |
 
-The NodeBackend trait in nsm1/src/node.rs abstracts both paths. Switching from Zebra RPC to Zaino gRPC requires changing the backend config, not the scanner logic.
+The NodeBackend trait in zap1/src/node.rs abstracts both paths. Switching from Zebra RPC to Zaino gRPC requires changing the backend config, not the scanner logic.

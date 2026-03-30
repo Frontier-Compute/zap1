@@ -1,4 +1,4 @@
-# NSM1 Evaluator Quickstart
+# ZAP1 Evaluator Quickstart
 
 This is the fastest path to validate the protocol's technical claims in under 10 minutes.
 
@@ -10,7 +10,7 @@ Open:
 
 Confirms:
 
-- protocol name: `NSM1`
+- protocol name: `ZAP1`
 - version metadata
 - event type counts: 12 defined, 9 deployed, 3 reserved
 - verification SDK reference
@@ -70,7 +70,7 @@ Confirms:
 
 - `valid: true`
 - proof can be verified independently by the server
-- verification is performed with `nsm1-verify`
+- verification is performed with `zap1-verify`
 
 ## 6. Proof bundle download
 
@@ -87,7 +87,7 @@ Confirms:
 
 Repo:
 
-`https://github.com/Frontier-Compute/nsm1`
+`https://github.com/Frontier-Compute/zap1`
 
 Confirms:
 
@@ -101,11 +101,11 @@ Confirms:
 
 Repo:
 
-`https://github.com/Frontier-Compute/nsm1-verify`
+`https://github.com/Frontier-Compute/zap1-verify`
 
 crate:
 
-`https://crates.io/crates/nsm1-verify`
+`https://crates.io/crates/zap1-verify`
 
 WASM verifier:
 
@@ -121,17 +121,17 @@ Confirms:
 
 Open:
 
-`https://github.com/Frontier-Compute/nsm1/blob/main/TEST_VECTORS.md`
+`https://github.com/Frontier-Compute/zap1/blob/main/TEST_VECTORS.md`
 
 Confirms:
 
-- deterministic vectors exist for all 9 deployed NSM1 event types
+- deterministic vectors exist for all 9 deployed ZAP1 event types
 
 ## 10. Clone and run tests
 
 ```bash
-git clone https://github.com/Frontier-Compute/nsm1.git
-cd nsm1
+git clone https://github.com/Frontier-Compute/zap1.git
+cd zap1
 cargo test --release --test memo_merkle_test
 ```
 
@@ -139,7 +139,7 @@ cargo test --release --test memo_merkle_test
 
 Details:
 
-`https://github.com/Frontier-Compute/nsm1/blob/main/ZAINO_VALIDATION.md`
+`https://github.com/Frontier-Compute/zap1/blob/main/ZAINO_VALIDATION.md`
 
 Confirms:
 

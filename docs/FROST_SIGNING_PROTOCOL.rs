@@ -1,6 +1,6 @@
 //! FROST_SIGNING_PROTOCOL.rs
 //!
-//! Sanitized reference code for the NSM1 anchor-signing flow using
+//! Sanitized reference code for the ZAP1 anchor-signing flow using
 //! FROST(Pallas, BLAKE2b-512). This document preserves the protocol logic
 //! while omitting any real key share values or deployment-specific file paths.
 
@@ -33,7 +33,7 @@ pub fn sign_anchor_message(
     message: &[u8],
 ) -> Result<SigningRoundReport, String> {
     if signers.len() != 2 {
-        return Err("NSM1 anchor signing requires exactly two participants in a 2-of-3 round".into());
+        return Err("ZAP1 anchor signing requires exactly two participants in a 2-of-3 round".into());
     }
 
     let group_verifying_key = {

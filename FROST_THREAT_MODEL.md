@@ -2,21 +2,21 @@
 
 Date: 2026-03-28
 Status: Design package and migration plan
-Applies to: Nordic Shield NSM1 anchor signing
+Applies to: Nordic Shield ZAP1 anchor signing
 
 ## 1. Scope
 
-This document describes how 2-of-3 FROST threshold signing would replace the current single-operator anchor signing path for `MERKLE_ROOT` commitments in the NSM1 protocol.
+This document describes how 2-of-3 FROST threshold signing would replace the current single-operator anchor signing path for `MERKLE_ROOT` commitments in the ZAP1 protocol.
 
 It is intentionally limited to anchor signing. It does not change:
 
-- NSM1 memo format
+- ZAP1 memo format
 - Merkle leaf construction
 - Merkle root calculation
 - proof bundle structure
 - `PROGRAM_ENTRY`, `OWNERSHIP_ATTEST`, or other lifecycle event semantics
 
-It changes only the authorization mechanism used when broadcasting the shielded transaction that carries the `NSM1:09:{root_hex}` anchor memo.
+It changes only the authorization mechanism used when broadcasting the shielded transaction that carries the `ZAP1:09:{root_hex}` anchor memo.
 
 ## 2. Current State
 
@@ -25,7 +25,7 @@ Today, anchor signing is single-key and hot-wallet based.
 Current production flow:
 
 1. The reference implementation or `auto_anchor.sh` determines that anchoring is required.
-2. The current Merkle root is encoded as `NSM1:09:{root_hex}`.
+2. The current Merkle root is encoded as `ZAP1:09:{root_hex}`.
 3. `zingo-cli quicksend` or `anchor_root send` builds and broadcasts a shielded self-transfer carrying that memo.
 4. The resulting txid is recorded in `merkle_roots.anchor_txid`.
 5. After confirmation, `anchor_height` is recorded and the proof bundle is complete.
@@ -93,7 +93,7 @@ Target flow:
 2. The anchor coordinator builds an unsigned anchor transaction with:
    - recipient: the existing shielded anchor address
    - amount: existing anchor dust amount
-   - memo: `NSM1:09:{root_hex}`
+   - memo: `ZAP1:09:{root_hex}`
 3. The coordinator derives the Orchard transaction sighash for that unsigned transaction.
 4. The coordinator opens a FROST signing session for signer set `{i, j}` where any two of the three shares participate.
 5. Each signer produces nonce commitments for the session.
@@ -140,14 +140,14 @@ Component D: broadcaster / recorder
 - records `anchor_txid` and later `anchor_height`
 - preserves current proof-bundle semantics
 
-### 4.3 NSM1 Compatibility
+### 4.3 ZAP1 Compatibility
 
-FROST does not alter the NSM1 protocol contract.
+FROST does not alter the ZAP1 protocol contract.
 
 Unchanged:
 
 - memo type remains `0x09`
-- memo payload remains the raw 32-byte Merkle root rendered as `NSM1:09:{root_hex}`
+- memo payload remains the raw 32-byte Merkle root rendered as `ZAP1:09:{root_hex}`
 - proof bundles still point to the anchored root, txid, and mined block height
 - verifiers continue checking inclusion proof plus memo/root match
 
@@ -499,9 +499,9 @@ Anchor root:
 
 - `024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
 
-NSM1 memo:
+ZAP1 memo:
 
-- `NSM1:09:024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
+- `ZAP1:09:024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
 
 Anchor amount:
 

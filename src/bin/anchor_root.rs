@@ -3,9 +3,9 @@ use std::env;
 use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
-use nsm1::db::Db;
-use nsm1::memo::{merkle_root_memo, StructuredMemo};
-use nsm1::merkle::decode_hash;
+use zap1::db::Db;
+use zap1::memo::{merkle_root_memo, StructuredMemo};
+use zap1::merkle::decode_hash;
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);

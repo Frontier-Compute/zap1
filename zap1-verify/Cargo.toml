@@ -1,0 +1,13 @@
+[package]
+name = "zap1-verify"
+version = "0.2.0"
+edition = "2021"
+description = "Standalone Merkle proof verifier for the ZAP1 on-chain protocol (Nordic Shield)"
+license = "MIT"
+authors = ["zk_nd3r <zk_nd3r@frontiercompute.io>"]
+repository = "https://github.com/Frontier-Compute/zap1-verify"
+keywords = ["zcash", "blake2b", "merkle", "verification", "zap1"]
+categories = ["cryptography"]
+
+[dependencies]
+blake2b_simd = "1"

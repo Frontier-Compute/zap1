@@ -1,7 +1,7 @@
-use nsm1::memo::{
+use zap1::memo::{
     hash_ownership_attest, hash_program_entry, merkle_root_memo, MemoType, StructuredMemo,
 };
-use nsm1::merkle::{compute_root, decode_hash, generate_proof};
+use zap1::merkle::{compute_root, decode_hash, generate_proof};
 
 #[test]
 fn memo_encode_decode_roundtrip() {
@@ -11,7 +11,7 @@ fn memo_encode_decode_roundtrip() {
         payload: entry,
     };
     let encoded = memo.encode();
-    assert!(encoded.starts_with("NSM1:01:"));
+    assert!(encoded.starts_with("ZAP1:01:"));
     let decoded = StructuredMemo::decode(&encoded).unwrap();
     assert_eq!(decoded.memo_type, MemoType::ProgramEntry);
     assert_eq!(decoded.payload, entry);
@@ -25,13 +25,13 @@ fn memo_decode_rejects_bad_prefix() {
 #[test]
 fn memo_decode_rejects_unknown_type() {
     let payload_hex = "00".repeat(32);
-    let bad = format!("NSM1:ff:{payload_hex}");
+    let bad = format!("ZAP1:ff:{payload_hex}");
     assert!(StructuredMemo::decode(&bad).is_err());
 }
 
 #[test]
 fn memo_decode_rejects_wrong_length() {
-    assert!(StructuredMemo::decode("NSM1:01:aabb").is_err());
+    assert!(StructuredMemo::decode("ZAP1:01:aabb").is_err());
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn merkle_root_memo_encodes_raw_root() {
     assert_eq!(memo.memo_type, MemoType::MerkleRoot);
     assert_eq!(memo.payload, root);
     let encoded = memo.encode();
-    assert!(encoded.starts_with("NSM1:09:"));
+    assert!(encoded.starts_with("ZAP1:09:"));
     assert!(encoded.contains(&"aa".repeat(32)));
 }
 
@@ -167,8 +167,8 @@ fn merkle_proof_verifies_manually() {
         for step in &proof {
             let sibling = decode_hash(&step.hash).unwrap();
             let (left, right) = match step.position {
-                nsm1::merkle::ProofPosition::Right => (&current, &sibling),
-                nsm1::merkle::ProofPosition::Left => (&sibling, &current),
+                zap1::merkle::ProofPosition::Right => (&current, &sibling),
+                zap1::merkle::ProofPosition::Left => (&sibling, &current),
             };
             let mut input = [0u8; 64];
             input[..32].copy_from_slice(left);

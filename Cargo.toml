@@ -1,12 +1,12 @@
 [package]
-name = "nsm1"
+name = "zap1"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85.1"
 authors = ["zk_nd3r <zk_nd3r@frontiercompute.io>"]
-description = "NSM1 structured memo protocol for Zcash. Reference implementation."
+description = "ZAP1 structured memo protocol for Zcash. Reference implementation."
 license = "MIT"
-repository = "https://github.com/Frontier-Compute/nsm1"
+repository = "https://github.com/Frontier-Compute/zap1"
 
 [[bin]]
 name = "anchor_root"
@@ -52,8 +52,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 tokio-stream = "0.1"
 
-# NSM1 verification SDK (vendored)
-nsm1-verify = { path = "nsm1-verify" }
+# ZAP1 verification SDK (vendored)
+zap1-verify = { path = "zap1-verify" }
 
 [build-dependencies]
 tonic-build = "0.12"

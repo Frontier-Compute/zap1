@@ -1,8 +1,8 @@
 services:
-  nsm1:
+  zap1:
     build:
       context: .
-    container_name: nsm1
+    container_name: zap1
     env_file: .env.mainnet
     volumes:
       - ./data:/data

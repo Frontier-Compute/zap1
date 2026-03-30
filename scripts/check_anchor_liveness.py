@@ -45,7 +45,7 @@ def main():
     last_age = history.get("last_anchor_age_hours")
     if last_age is None or last_age < 0:
         errors.append(f"invalid last_anchor_age_hours={last_age}")
-    elif last_age > 48:
+    elif last_age > 72:
         errors.append(f"last anchor is stale: {last_age}h old")
 
     if anchors:

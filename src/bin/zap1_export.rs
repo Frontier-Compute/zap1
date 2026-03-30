@@ -100,6 +100,40 @@ struct Cli {
     serial: Option<String>,
     event_types: Vec<String>,
     output: Option<String>,
+    profile: Option<String>,
+}
+
+fn apply_profile(profile: &str) -> Vec<String> {
+    match profile {
+        "auditor" => vec![
+            "PROGRAM_ENTRY",
+            "OWNERSHIP_ATTEST",
+            "HOSTING_PAYMENT",
+            "SHIELD_RENEWAL",
+            "CONTRACT_ANCHOR",
+            "EXIT",
+        ],
+        "counterparty" => vec!["PROGRAM_ENTRY", "OWNERSHIP_ATTEST", "DEPLOYMENT"],
+        "member" => vec![
+            "PROGRAM_ENTRY",
+            "OWNERSHIP_ATTEST",
+            "HOSTING_PAYMENT",
+            "SHIELD_RENEWAL",
+        ],
+        "regulator" => vec![
+            "PROGRAM_ENTRY",
+            "OWNERSHIP_ATTEST",
+            "CONTRACT_ANCHOR",
+            "HOSTING_PAYMENT",
+            "SHIELD_RENEWAL",
+            "TRANSFER",
+            "EXIT",
+        ],
+        _ => vec![],
+    }
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 #[tokio::main]
@@ -108,6 +142,20 @@ async fn main() -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()?;
+
+    // apply profile if set
+    let mut cli = cli;
+    if let Some(ref profile) = cli.profile {
+        if cli.event_types.is_empty() {
+            cli.event_types = apply_profile(profile);
+            if cli.event_types.is_empty() {
+                return Err(anyhow!(
+                    "unknown profile: {profile}. use: auditor, counterparty, member, regulator"
+                ));
+            }
+            eprintln!("profile '{}': filtering to {:?}", profile, cli.event_types);
+        }
+    }
 
     // get leaf hashes and lifecycle events
     let (leaf_hashes, leaf_events) = collect_leaf_hashes(&client, &cli).await?;
@@ -237,6 +285,7 @@ fn parse_args() -> Result<Cli> {
     let mut serial = None;
     let mut event_types = Vec::new();
     let mut output = None;
+    let mut profile = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -269,6 +318,12 @@ fn parse_args() -> Result<Cli> {
                         .ok_or_else(|| anyhow!("missing --output value"))?,
                 );
             }
+            "--profile" => {
+                profile = Some(
+                    args.next()
+                        .ok_or_else(|| anyhow!("missing --profile value"))?,
+                );
+            }
             "--help" | "-h" => {
                 print_usage();
                 std::process::exit(0);
@@ -283,16 +338,18 @@ fn parse_args() -> Result<Cli> {
         serial,
         event_types,
         output,
+        profile,
     })
 }
 
 fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  zap1_export --wallet-hash <hash>");
+    eprintln!("  zap1_export --wallet-hash <hash> --profile auditor");
+    eprintln!("  zap1_export --wallet-hash <hash> --profile counterparty -o package.json");
     eprintln!("  zap1_export --wallet-hash <hash> --event-type HOSTING_PAYMENT");
-    eprintln!("  zap1_export --wallet-hash <hash> -o audit_package.json");
-    eprintln!("  zap1_export --api-url https://pay.frontiercompute.io --wallet-hash <hash>");
     eprintln!();
-    eprintln!("Produces a self-contained audit package with Merkle proofs");
-    eprintln!("that a counterparty can verify without API access.");
+    eprintln!("Profiles: auditor, counterparty, member, regulator");
+    eprintln!("Each profile selects a predefined set of event types to disclose.");
+    eprintln!("Verify offline: zap1_audit --export package.json");
 }

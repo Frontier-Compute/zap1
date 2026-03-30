@@ -42,29 +42,117 @@ struct BundleAnchor {
 }
 
 enum InputSource {
-    File(String),
-    Url(String),
+    Bundle(String),
+    BundleUrl(String),
+    ExportFile(String),
+}
+
+#[derive(Debug, Deserialize)]
+struct AuditPackage {
+    proofs: Vec<ExportProof>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct ExportProof {
+    leaf_hash: String,
+    event_type: String,
+    proof_steps: Vec<BundleProofStep>,
+    root: String,
+    anchor_txid: Option<String>,
+    anchor_height: Option<u32>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let source = parse_args()?;
-    let raw = match source {
-        InputSource::File(path) => fs::read_to_string(&path)
-            .with_context(|| format!("failed to read bundle file: {path}"))?,
-        InputSource::Url(url) => reqwest::get(&url)
-            .await
-            .with_context(|| format!("failed to fetch bundle url: {url}"))?
-            .error_for_status()
-            .with_context(|| format!("bundle url returned error status: {url}"))?
-            .text()
-            .await
-            .with_context(|| format!("failed to read bundle response body: {url}"))?,
-    };
+    match source {
+        InputSource::Bundle(path) => {
+            let raw = fs::read_to_string(&path)
+                .with_context(|| format!("failed to read bundle file: {path}"))?;
+            let bundle: ProofBundle =
+                serde_json::from_str(&raw).context("invalid proof bundle JSON")?;
+            verify_bundle(&bundle)?;
+            print_report(&bundle);
+        }
+        InputSource::BundleUrl(url) => {
+            let raw = reqwest::get(&url)
+                .await
+                .with_context(|| format!("failed to fetch bundle url: {url}"))?
+                .error_for_status()
+                .with_context(|| format!("bundle url returned error status: {url}"))?
+                .text()
+                .await
+                .with_context(|| format!("failed to read bundle response body: {url}"))?;
+            let bundle: ProofBundle =
+                serde_json::from_str(&raw).context("invalid proof bundle JSON")?;
+            verify_bundle(&bundle)?;
+            print_report(&bundle);
+        }
+        InputSource::ExportFile(path) => {
+            let raw = fs::read_to_string(&path)
+                .with_context(|| format!("failed to read export file: {path}"))?;
+            let package: AuditPackage =
+                serde_json::from_str(&raw).context("invalid export package JSON")?;
+            verify_export(&package)?;
+        }
+    }
+    Ok(())
+}
 
-    let bundle: ProofBundle = serde_json::from_str(&raw).context("invalid proof bundle JSON")?;
-    verify_bundle(&bundle)?;
-    print_report(&bundle);
+fn verify_export(package: &AuditPackage) -> Result<()> {
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+
+    for proof in &package.proofs {
+        let leaf = zap1_verify::hex_to_bytes32(&proof.leaf_hash)
+            .ok_or_else(|| anyhow!("invalid leaf hash: {}", &proof.leaf_hash[..16]))?;
+        let root = zap1_verify::hex_to_bytes32(&proof.root)
+            .ok_or_else(|| anyhow!("invalid root hash: {}", &proof.root[..16]))?;
+
+        let steps: Vec<zap1_verify::ProofStep> = proof
+            .proof_steps
+            .iter()
+            .map(|s| {
+                let hash = zap1_verify::hex_to_bytes32(&s.hash)
+                    .ok_or_else(|| anyhow!("invalid step hash"))?;
+                let position = match s.position.as_str() {
+                    "left" => zap1_verify::SiblingPosition::Left,
+                    "right" => zap1_verify::SiblingPosition::Right,
+                    other => return Err(anyhow!("invalid position: {other}")),
+                };
+                Ok(zap1_verify::ProofStep { hash, position })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let valid = zap1_verify::verify_proof(&leaf, &steps, &root);
+        if valid {
+            println!(
+                "pass: {} {} anchor={}",
+                proof.event_type,
+                &proof.leaf_hash[..12],
+                proof
+                    .anchor_height
+                    .map(|h| h.to_string())
+                    .unwrap_or_else(|| "none".into())
+            );
+            pass += 1;
+        } else {
+            println!(
+                "FAIL: {} {} proof verification failed",
+                proof.event_type,
+                &proof.leaf_hash[..12]
+            );
+            fail += 1;
+        }
+    }
+
+    println!();
+    println!("{pass} pass, {fail} fail");
+
+    if fail > 0 {
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -78,13 +166,19 @@ fn parse_args() -> Result<InputSource> {
                 let path = args
                     .next()
                     .ok_or_else(|| anyhow!("missing value for --bundle"))?;
-                source = Some(InputSource::File(path));
+                source = Some(InputSource::Bundle(path));
             }
             "--bundle-url" => {
                 let url = args
                     .next()
                     .ok_or_else(|| anyhow!("missing value for --bundle-url"))?;
-                source = Some(InputSource::Url(url));
+                source = Some(InputSource::BundleUrl(url));
+            }
+            "--export" => {
+                let path = args
+                    .next()
+                    .ok_or_else(|| anyhow!("missing value for --export"))?;
+                source = Some(InputSource::ExportFile(path));
             }
             "--help" | "-h" => {
                 print_usage();
@@ -94,7 +188,11 @@ fn parse_args() -> Result<InputSource> {
         }
     }
 
-    source.ok_or_else(|| anyhow!("usage: zap1_audit --bundle <proof.json> | --bundle-url <url>"))
+    source.ok_or_else(|| {
+        anyhow!(
+        "usage: zap1_audit --bundle <proof.json> | --bundle-url <url> | --export <package.json>"
+    )
+    })
 }
 
 fn verify_bundle(bundle: &ProofBundle) -> Result<()> {
@@ -166,4 +264,5 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  zap1_audit --bundle <proof.json>");
     eprintln!("  zap1_audit --bundle-url <https://.../proof.json>");
+    eprintln!("  zap1_audit --export <package.json>  (verify all proofs in an export package)");
 }

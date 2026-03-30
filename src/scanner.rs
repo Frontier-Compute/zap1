@@ -119,13 +119,8 @@ async fn scan_once(
             };
 
             // Trial decrypt with our UFVK
-            let decrypted = decrypt_transaction(
-                &config.network,
-                Some(block_height),
-                None,
-                &tx,
-                ufvks,
-            );
+            let decrypted =
+                decrypt_transaction(&config.network, Some(block_height), None, &tx, ufvks);
 
             // Check Orchard outputs
             for output in decrypted.orchard_outputs() {
@@ -138,10 +133,9 @@ async fn scan_once(
                 // We need to compare the Orchard address from the note against
                 // our generated addresses
                 for invoice in &active_invoices {
-                    if let Ok(ua) = crate::keys::unified_address_at(
-                        &ufvks[&0u32],
-                        invoice.diversifier_index,
-                    ) {
+                    if let Ok(ua) =
+                        crate::keys::unified_address_at(&ufvks[&0u32], invoice.diversifier_index)
+                    {
                         if let Some(orchard_addr) = ua.orchard() {
                             if *orchard_addr == recipient {
                                 tracing::info!(
@@ -160,18 +154,27 @@ async fn scan_once(
 
                                 // Send Signal notification
                                 if let Ok(Some(updated)) = db.get_invoice(&invoice.id) {
-                                    if transitioned_to_paid
-                                        && updated.status == InvoiceStatus::Paid
+                                    if transitioned_to_paid && updated.status == InvoiceStatus::Paid
                                     {
                                         if let Some(wallet_hash) = updated.wallet_hash.as_deref() {
-                                            create_lifecycle_leaf_for_invoice(db, &updated, wallet_hash);
+                                            create_lifecycle_leaf_for_invoice(
+                                                db,
+                                                &updated,
+                                                wallet_hash,
+                                            );
                                         }
                                     }
 
                                     let nc = config.clone();
                                     let txid_owned = txid_str.to_string();
                                     tokio::spawn(async move {
-                                        crate::notify::payment_received(&nc, &updated, value_zat, &txid_owned).await;
+                                        crate::notify::payment_received(
+                                            &nc,
+                                            &updated,
+                                            value_zat,
+                                            &txid_owned,
+                                        )
+                                        .await;
                                     });
                                 }
                             }
@@ -245,42 +248,56 @@ async fn scan_mempool(
             Err(_) => continue,
         };
 
-        let decrypted = decrypt_transaction(
-            &config.network,
-            None,
-            Some(block_height),
-            &tx,
-            ufvks,
-        );
+        let decrypted = decrypt_transaction(&config.network, None, Some(block_height), &tx, ufvks);
 
         for output in decrypted.orchard_outputs() {
             let value_zat = output.note_value().into_u64();
             let recipient = output.note().recipient();
 
             for invoice in &active_invoices {
-                if let Ok(ua) = crate::keys::unified_address_at(&ufvks[&0u32], invoice.diversifier_index) {
+                if let Ok(ua) =
+                    crate::keys::unified_address_at(&ufvks[&0u32], invoice.diversifier_index)
+                {
                     if let Some(orchard_addr) = ua.orchard() {
                         if *orchard_addr == recipient {
                             tracing::info!(
                                 "MEMPOOL payment detected: {} zat for invoice {} (tx {})",
-                                value_zat, invoice.id, txid_str
+                                value_zat,
+                                invoice.id,
+                                txid_str
                             );
                             // Record as payment (will be confirmed when block is mined)
-                            let transitioned = db.record_payment(&invoice.id, value_zat, txid_str, chain_height, "mempool")?;
+                            let transitioned = db.record_payment(
+                                &invoice.id,
+                                value_zat,
+                                txid_str,
+                                chain_height,
+                                "mempool",
+                            )?;
 
                             if let Ok(Some(updated)) = db.get_invoice(&invoice.id) {
                                 if transitioned
                                     && updated.status == crate::models::InvoiceStatus::Paid
                                 {
                                     if let Some(wallet_hash) = updated.wallet_hash.as_deref() {
-                                        create_lifecycle_leaf_for_invoice(db, &updated, wallet_hash);
+                                        create_lifecycle_leaf_for_invoice(
+                                            db,
+                                            &updated,
+                                            wallet_hash,
+                                        );
                                     }
                                 }
 
                                 let nc = config.clone();
                                 let txid_owned = txid_str.to_string();
                                 tokio::spawn(async move {
-                                    crate::notify::payment_received(&nc, &updated, value_zat, &txid_owned).await;
+                                    crate::notify::payment_received(
+                                        &nc,
+                                        &updated,
+                                        value_zat,
+                                        &txid_owned,
+                                    )
+                                    .await;
                                 });
                             }
                         }
@@ -298,32 +315,40 @@ async fn scan_mempool(
 ///   "program" | "initial" → PROGRAM_ENTRY
 ///   "hosting"             → HOSTING_PAYMENT (needs serial from miner_assignments)
 ///   "renewal"             → SHIELD_RENEWAL
-fn create_lifecycle_leaf_for_invoice(
-    db: &Db,
-    invoice: &crate::models::Invoice,
-    wallet_hash: &str,
-) {
+fn create_lifecycle_leaf_for_invoice(db: &Db, invoice: &crate::models::Invoice, wallet_hash: &str) {
     let result = match invoice.invoice_type.as_str() {
-        "program" | "initial" => {
-            db.insert_program_entry_leaf(wallet_hash)
-                .map(|(leaf, root)| {
-                    tracing::info!("PROGRAM_ENTRY committed: leaf={} root={}", leaf.leaf_hash, root.root_hash);
-                })
-        }
+        "program" | "initial" => db
+            .insert_program_entry_leaf(wallet_hash)
+            .map(|(leaf, root)| {
+                tracing::info!(
+                    "PROGRAM_ENTRY committed: leaf={} root={}",
+                    leaf.leaf_hash,
+                    root.root_hash
+                );
+            }),
         "hosting" => {
             // Parse month/year from memo (format: "NS-hosting-YYYY-MM-...")
             // or fall back to current date
             let (month, year) = parse_hosting_period(invoice.memo.as_deref());
             // Need a serial  - look up from miner_assignments
             match db.get_miner_by_wallet_hash(wallet_hash) {
-                Ok(Some((_addr, serial, _fid))) => {
-                    db.insert_hosting_payment_leaf(wallet_hash, &serial, month, year)
-                        .map(|(leaf, root)| {
-                            tracing::info!("HOSTING_PAYMENT committed: leaf={} root={} serial={} period={}-{}", leaf.leaf_hash, root.root_hash, serial, year, month);
-                        })
-                }
+                Ok(Some((_addr, serial, _fid))) => db
+                    .insert_hosting_payment_leaf(wallet_hash, &serial, month, year)
+                    .map(|(leaf, root)| {
+                        tracing::info!(
+                            "HOSTING_PAYMENT committed: leaf={} root={} serial={} period={}-{}",
+                            leaf.leaf_hash,
+                            root.root_hash,
+                            serial,
+                            year,
+                            month
+                        );
+                    }),
                 _ => {
-                    tracing::warn!("Hosting payment for {} but no miner assignment found  - skipping leaf", wallet_hash);
+                    tracing::warn!(
+                        "Hosting payment for {} but no miner assignment found  - skipping leaf",
+                        wallet_hash
+                    );
                     Ok(())
                 }
             }
@@ -332,14 +357,23 @@ fn create_lifecycle_leaf_for_invoice(
             let year = parse_renewal_year(invoice.memo.as_deref());
             db.insert_shield_renewal_leaf(wallet_hash, year)
                 .map(|(leaf, root)| {
-                    tracing::info!("SHIELD_RENEWAL committed: leaf={} root={} year={}", leaf.leaf_hash, root.root_hash, year);
+                    tracing::info!(
+                        "SHIELD_RENEWAL committed: leaf={} root={} year={}",
+                        leaf.leaf_hash,
+                        root.root_hash,
+                        year
+                    );
                 })
         }
         _ => Ok(()),
     };
 
     if let Err(e) = result {
-        tracing::warn!("Failed to create lifecycle leaf for invoice {}: {}", invoice.id, e);
+        tracing::warn!(
+            "Failed to create lifecycle leaf for invoice {}: {}",
+            invoice.id,
+            e
+        );
     }
 }
 
@@ -355,7 +389,10 @@ fn parse_hosting_period(memo: Option<&str>) -> (u32, u32) {
         }
     }
     let now = chrono::Utc::now();
-    (now.format("%m").to_string().parse().unwrap_or(1), now.format("%Y").to_string().parse().unwrap_or(2026))
+    (
+        now.format("%m").to_string().parse().unwrap_or(1),
+        now.format("%Y").to_string().parse().unwrap_or(2026),
+    )
 }
 
 /// Parse renewal year from memo like "NS-renewal-2027-..." → 2027
@@ -368,7 +405,11 @@ fn parse_renewal_year(memo: Option<&str>) -> u32 {
             }
         }
     }
-    chrono::Utc::now().format("%Y").to_string().parse().unwrap_or(2026)
+    chrono::Utc::now()
+        .format("%Y")
+        .to_string()
+        .parse()
+        .unwrap_or(2026)
 }
 
 // Anchor automation is now in anchor.rs (spawned from main.rs)

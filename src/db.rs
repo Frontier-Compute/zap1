@@ -3,8 +3,8 @@ use rusqlite::{params, Connection};
 use std::sync::Mutex;
 
 use crate::memo::{
-    hash_contract_anchor, hash_deployment, hash_exit, hash_hosting_payment,
-    hash_ownership_attest, hash_program_entry, hash_shield_renewal, hash_transfer, MemoType,
+    hash_contract_anchor, hash_deployment, hash_exit, hash_hosting_payment, hash_ownership_attest,
+    hash_program_entry, hash_shield_renewal, hash_transfer, MemoType,
 };
 use crate::merkle::{
     compute_root, decode_hash, generate_proof, MerkleLeafRecord, MerkleRootRecord,
@@ -69,9 +69,8 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT last_scanned_height, next_diversifier_index FROM scan_state WHERE id = 1",
         )?;
-        let (height, next_idx) = stmt.query_row([], |row| {
-            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-        })?;
+        let (height, next_idx) =
+            stmt.query_row([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)))?;
         Ok((height, next_idx))
     }
 
@@ -286,7 +285,10 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_miner_by_wallet_hash(&self, wallet_hash: &str) -> Result<Option<(String, String, Option<u64>)>> {
+    pub fn get_miner_by_wallet_hash(
+        &self,
+        wallet_hash: &str,
+    ) -> Result<Option<(String, String, Option<u64>)>> {
         let conn = self.conn()?;
         let result = conn.query_row(
             "SELECT wallet_address, serial_number, foreman_miner_id FROM miner_assignments WHERE wallet_hash = ?1 LIMIT 1",
@@ -305,7 +307,10 @@ impl Db {
     }
 
     /// Get ALL miners for a wallet hash (multi-miner support)
-    pub fn get_miners_by_wallet_hash(&self, wallet_hash: &str) -> Result<Vec<(String, String, Option<u64>)>> {
+    pub fn get_miners_by_wallet_hash(
+        &self,
+        wallet_hash: &str,
+    ) -> Result<Vec<(String, String, Option<u64>)>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT wallet_address, serial_number, foreman_miner_id FROM miner_assignments WHERE wallet_hash = ?1"
@@ -318,7 +323,9 @@ impl Db {
             ))
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -331,7 +338,9 @@ impl Db {
         )?;
         let rows = stmt.query_map(params![wallet_hash], row_to_invoice)?;
         let mut invoices = Vec::new();
-        for row in rows { invoices.push(row?); }
+        for row in rows {
+            invoices.push(row?);
+        }
         Ok(invoices)
     }
 
@@ -361,11 +370,9 @@ impl Db {
     /// Get total machines
     pub fn count_total_machines(&self) -> Result<usize> {
         let conn = self.conn()?;
-        let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM miner_assignments",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: usize = conn.query_row("SELECT COUNT(*) FROM miner_assignments", [], |row| {
+            row.get(0)
+        })?;
         Ok(count)
     }
 
@@ -383,7 +390,9 @@ impl Db {
             ))
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -410,7 +419,10 @@ impl Db {
         Ok(invoices)
     }
 
-    pub fn insert_program_entry_leaf(&self, wallet_hash: &str) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
+    pub fn insert_program_entry_leaf(
+        &self,
+        wallet_hash: &str,
+    ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
         self.insert_merkle_leaf(MemoType::ProgramEntry, wallet_hash, None)
     }
 
@@ -430,7 +442,12 @@ impl Db {
         contract_sha256: &str,
     ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
         let leaf_hash = hex::encode(hash_contract_anchor(serial_number, contract_sha256));
-        self.insert_leaf_raw(MemoType::ContractAnchor, &leaf_hash, wallet_hash, Some(serial_number))
+        self.insert_leaf_raw(
+            MemoType::ContractAnchor,
+            &leaf_hash,
+            wallet_hash,
+            Some(serial_number),
+        )
     }
 
     /// 0x04 DEPLOYMENT: hash(serial_number || facility_id || timestamp)
@@ -442,7 +459,12 @@ impl Db {
         timestamp: u64,
     ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
         let leaf_hash = hex::encode(hash_deployment(serial_number, facility_id, timestamp));
-        self.insert_leaf_raw(MemoType::Deployment, &leaf_hash, wallet_hash, Some(serial_number))
+        self.insert_leaf_raw(
+            MemoType::Deployment,
+            &leaf_hash,
+            wallet_hash,
+            Some(serial_number),
+        )
     }
 
     /// 0x05 HOSTING_PAYMENT: hash(serial_number || month || year)
@@ -454,7 +476,12 @@ impl Db {
         year: u32,
     ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
         let leaf_hash = hex::encode(hash_hosting_payment(serial_number, month, year));
-        self.insert_leaf_raw(MemoType::HostingPayment, &leaf_hash, wallet_hash, Some(serial_number))
+        self.insert_leaf_raw(
+            MemoType::HostingPayment,
+            &leaf_hash,
+            wallet_hash,
+            Some(serial_number),
+        )
     }
 
     /// 0x06 SHIELD_RENEWAL: hash(wallet_hash || year)
@@ -474,8 +501,17 @@ impl Db {
         new_wallet_hash: &str,
         serial_number: &str,
     ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
-        let leaf_hash = hex::encode(hash_transfer(old_wallet_hash, new_wallet_hash, serial_number));
-        self.insert_leaf_raw(MemoType::Transfer, &leaf_hash, old_wallet_hash, Some(serial_number))
+        let leaf_hash = hex::encode(hash_transfer(
+            old_wallet_hash,
+            new_wallet_hash,
+            serial_number,
+        ));
+        self.insert_leaf_raw(
+            MemoType::Transfer,
+            &leaf_hash,
+            old_wallet_hash,
+            Some(serial_number),
+        )
     }
 
     /// 0x08 EXIT: hash(wallet_hash || serial_number || timestamp)
@@ -520,17 +556,22 @@ impl Db {
     /// Get aggregate stats for the /stats endpoint.
     pub fn get_stats(&self) -> Result<(usize, usize, Option<u32>, Option<u32>)> {
         let conn = self.conn()?;
-        let total_leaves: usize = conn.query_row(
-            "SELECT COUNT(*) FROM merkle_leaves", [], |row| row.get(0),
-        )?;
+        let total_leaves: usize =
+            conn.query_row("SELECT COUNT(*) FROM merkle_leaves", [], |row| row.get(0))?;
         let total_anchors: usize = conn.query_row(
-            "SELECT COUNT(*) FROM merkle_roots WHERE anchor_txid IS NOT NULL", [], |row| row.get(0),
+            "SELECT COUNT(*) FROM merkle_roots WHERE anchor_txid IS NOT NULL",
+            [],
+            |row| row.get(0),
         )?;
         let last_anchor_height: Option<i64> = conn.query_row(
-            "SELECT MAX(anchor_height) FROM merkle_roots WHERE anchor_txid IS NOT NULL", [], |row| row.get(0),
+            "SELECT MAX(anchor_height) FROM merkle_roots WHERE anchor_txid IS NOT NULL",
+            [],
+            |row| row.get(0),
         )?;
         let first_anchor_height: Option<i64> = conn.query_row(
-            "SELECT MIN(anchor_height) FROM merkle_roots WHERE anchor_txid IS NOT NULL", [], |row| row.get(0),
+            "SELECT MIN(anchor_height) FROM merkle_roots WHERE anchor_txid IS NOT NULL",
+            [],
+            |row| row.get(0),
         )?;
         Ok((
             total_leaves,
@@ -544,12 +585,16 @@ impl Db {
     pub fn get_root_covering_leaf(&self, leaf_id_approx: &str) -> Result<Option<MerkleRootRecord>> {
         let conn = self.conn()?;
         // Get the leaf's position
-        let leaf_pos: Option<i64> = conn.query_row(
-            "SELECT id FROM merkle_leaves WHERE leaf_hash = ?1",
-            params![leaf_id_approx],
-            |row| row.get(0),
-        ).ok();
-        let Some(pos) = leaf_pos else { return Ok(None); };
+        let leaf_pos: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM merkle_leaves WHERE leaf_hash = ?1",
+                params![leaf_id_approx],
+                |row| row.get(0),
+            )
+            .ok();
+        let Some(pos) = leaf_pos else {
+            return Ok(None);
+        };
         // Find the smallest root whose leaf_count >= this leaf's position
         let result = conn.query_row(
             "SELECT root_hash, leaf_count, anchor_txid, anchor_height, created_at
@@ -558,13 +603,15 @@ impl Db {
              ORDER BY id ASC
              LIMIT 1",
             params![pos],
-            |row| Ok(MerkleRootRecord {
-                root_hash: row.get(0)?,
-                leaf_count: row.get::<_, i64>(1)? as usize,
-                anchor_txid: row.get(2)?,
-                anchor_height: row.get::<_, Option<i64>>(3)?.map(|v| v as u32),
-                created_at: row.get(4)?,
-            }),
+            |row| {
+                Ok(MerkleRootRecord {
+                    root_hash: row.get(0)?,
+                    leaf_count: row.get::<_, i64>(1)? as usize,
+                    anchor_txid: row.get(2)?,
+                    anchor_height: row.get::<_, Option<i64>>(3)?.map(|v| v as u32),
+                    created_at: row.get(4)?,
+                })
+            },
         );
         match result {
             Ok(r) => Ok(Some(r)),
@@ -688,7 +735,8 @@ impl Db {
 
     pub fn total_leaf_count(&self) -> Result<usize> {
         let conn = self.conn()?;
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM merkle_leaves", [], |row| row.get(0))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM merkle_leaves", [], |row| row.get(0))?;
         Ok(count as usize)
     }
 
@@ -701,10 +749,8 @@ impl Db {
         )?;
         let roots = stmt
             .query_map([], |row| {
-                let leaf_count = normalize_root_leaf_count(
-                    row.get::<_, i64>(1)? as usize,
-                    total_leaves,
-                );
+                let leaf_count =
+                    normalize_root_leaf_count(row.get::<_, i64>(1)? as usize, total_leaves);
                 Ok(crate::merkle::MerkleRootRecord {
                     root_hash: row.get(0)?,
                     leaf_count,
@@ -720,7 +766,10 @@ impl Db {
     pub fn get_verification_bundle(&self, leaf_hash: &str) -> Result<Option<VerificationBundle>> {
         let conn = self.conn()?;
         let all_leaves = merkle_leaves(&conn)?;
-        let Some(index) = all_leaves.iter().position(|leaf| leaf.leaf_hash == leaf_hash) else {
+        let Some(index) = all_leaves
+            .iter()
+            .position(|leaf| leaf.leaf_hash == leaf_hash)
+        else {
             return Ok(None);
         };
 
@@ -733,13 +782,15 @@ impl Db {
              ORDER BY leaf_count ASC
              LIMIT 1",
             params![leaf_position as i64],
-            |row| Ok(MerkleRootRecord {
-                root_hash: row.get(0)?,
-                leaf_count: row.get::<_, i64>(1)? as usize,
-                anchor_txid: row.get(2)?,
-                anchor_height: row.get::<_, Option<i64>>(3)?.map(|v| v as u32),
-                created_at: row.get(4)?,
-            }),
+            |row| {
+                Ok(MerkleRootRecord {
+                    root_hash: row.get(0)?,
+                    leaf_count: row.get::<_, i64>(1)? as usize,
+                    anchor_txid: row.get(2)?,
+                    anchor_height: row.get::<_, Option<i64>>(3)?.map(|v| v as u32),
+                    created_at: row.get(4)?,
+                })
+            },
         );
 
         // Use covering anchored root if available, otherwise fall back to current root
@@ -761,7 +812,8 @@ impl Db {
         };
 
         // Generate proof using only the leaves covered by this root
-        let leaves_for_proof: Vec<&MerkleLeafRecord> = all_leaves.iter().take(leaf_set_size).collect();
+        let leaves_for_proof: Vec<&MerkleLeafRecord> =
+            all_leaves.iter().take(leaf_set_size).collect();
         let leaf_bytes: Vec<[u8; 32]> = leaves_for_proof
             .iter()
             .map(|leaf| decode_hash(&leaf.leaf_hash))
@@ -821,8 +873,12 @@ impl Db {
         })();
 
         match &result {
-            Ok(_) => { conn.execute("COMMIT", [])?; }
-            Err(_) => { let _ = conn.execute("ROLLBACK", []); }
+            Ok(_) => {
+                conn.execute("COMMIT", [])?;
+            }
+            Err(_) => {
+                let _ = conn.execute("ROLLBACK", []);
+            }
         }
         result
     }
@@ -837,7 +893,8 @@ impl Db {
         let leaf_hash = match event_type {
             MemoType::ProgramEntry => hex::encode(hash_program_entry(wallet_hash)),
             MemoType::OwnershipAttest => {
-                let serial_number = serial_number.context("serial number required for ownership leaf")?;
+                let serial_number =
+                    serial_number.context("serial number required for ownership leaf")?;
                 hex::encode(hash_ownership_attest(wallet_hash, serial_number))
             }
             MemoType::MerkleRoot => anyhow::bail!("Merkle root records are not stored as leaves"),
@@ -876,13 +933,17 @@ impl Db {
         })();
 
         match &result {
-            Ok(_) => { conn.execute("COMMIT", [])?; }
-            Err(_) => { let _ = conn.execute("ROLLBACK", []); }
+            Ok(_) => {
+                conn.execute("COMMIT", [])?;
+            }
+            Err(_) => {
+                let _ = conn.execute("ROLLBACK", []);
+            }
         }
         result?;
 
-        let leaf = merkle_leaf_by_hash(&conn, &leaf_hash)?
-            .context("Merkle leaf insert/query failed")?;
+        let leaf =
+            merkle_leaf_by_hash(&conn, &leaf_hash)?.context("Merkle leaf insert/query failed")?;
         let root = current_root(&conn)?.context("Merkle root missing after leaf insert")?;
 
         Ok((leaf, root))
@@ -939,7 +1000,8 @@ fn merkle_leaves(conn: &Connection) -> Result<Vec<MerkleLeafRecord>> {
     )?;
     let rows = stmt.query_map([], |row| {
         let event_type_raw: i64 = row.get(1)?;
-        let event_type = MemoType::from_u8(event_type_raw as u8).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let event_type =
+            MemoType::from_u8(event_type_raw as u8).map_err(|_| rusqlite::Error::InvalidQuery)?;
         Ok(MerkleLeafRecord {
             leaf_hash: row.get(0)?,
             event_type,
@@ -965,7 +1027,8 @@ fn merkle_leaf_by_hash(conn: &Connection, leaf_hash: &str) -> Result<Option<Merk
     )?;
     let result = stmt.query_row(params![leaf_hash], |row| {
         let event_type_raw: i64 = row.get(1)?;
-        let event_type = MemoType::from_u8(event_type_raw as u8).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let event_type =
+            MemoType::from_u8(event_type_raw as u8).map_err(|_| rusqlite::Error::InvalidQuery)?;
         Ok(MerkleLeafRecord {
             leaf_hash: row.get(0)?,
             event_type,

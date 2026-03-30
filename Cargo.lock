@@ -1497,46 +1497,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "549e471b99ccaf2f89101bec68f4d244457d5a95a9c3d0672e9564124397741d"
 
 [[package]]
-name = "zap1"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.8.8",
- "blake2b_simd",
- "chrono",
- "hex",
- "zap1-verify",
- "orchard",
- "prost 0.13.5",
- "qrcode",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-build 0.12.3",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zcash_client_backend",
- "zcash_keys",
- "zcash_primitives",
- "zcash_protocol",
- "zip32",
-]
-
-[[package]]
-name = "zap1-verify"
-version = "0.2.0"
-dependencies = [
- "blake2b_simd",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3486,6 +3446,46 @@ dependencies = [
  "quote",
  "syn",
  "synstructure",
+]
+
+[[package]]
+name = "zap1"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.8",
+ "blake2b_simd",
+ "chrono",
+ "hex",
+ "orchard",
+ "prost 0.13.5",
+ "qrcode",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build 0.12.3",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zap1-verify",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zip32",
+]
+
+[[package]]
+name = "zap1-verify"
+version = "0.2.0"
+dependencies = [
+ "blake2b_simd",
 ]
 
 [[package]]

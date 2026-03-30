@@ -69,34 +69,42 @@ impl ForemanClient {
     pub async fn get_all_miners(&self) -> Result<Vec<MinerStatus>> {
         let url = format!("{}/clients/{}/miners", FOREMAN_API, self.client_id);
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .send()
             .await
             .context("Foreman API request failed")?;
 
-        let data: ForemanMinersResponse = resp.json().await
-            .context("Foreman API parse failed")?;
+        let data: ForemanMinersResponse = resp.json().await.context("Foreman API parse failed")?;
 
-        Ok(data.results.into_iter().map(|m| MinerStatus {
-            miner_id: m.id,
-            name: m.name.unwrap_or_else(|| format!("Miner-{}", m.id)),
-            status: m.state.unwrap_or_else(|| "unknown".to_string()),
-            hashrate: m.hashrate_avg.unwrap_or(0.0),
-            hashrate_unit: m.hashrate_unit.unwrap_or_else(|| "KH/s".to_string()),
-            temp: m.temp_avg,
-            fan_speed: m.fan_speed_avg,
-            pool: m.pool,
-            uptime: None,
-            last_seen: m.last_seen,
-        }).collect())
+        Ok(data
+            .results
+            .into_iter()
+            .map(|m| MinerStatus {
+                miner_id: m.id,
+                name: m.name.unwrap_or_else(|| format!("Miner-{}", m.id)),
+                status: m.state.unwrap_or_else(|| "unknown".to_string()),
+                hashrate: m.hashrate_avg.unwrap_or(0.0),
+                hashrate_unit: m.hashrate_unit.unwrap_or_else(|| "KH/s".to_string()),
+                temp: m.temp_avg,
+                fan_speed: m.fan_speed_avg,
+                pool: m.pool,
+                uptime: None,
+                last_seen: m.last_seen,
+            })
+            .collect())
     }
 
     pub async fn get_miner(&self, miner_id: u64) -> Result<Option<MinerStatus>> {
-        let url = format!("{}/clients/{}/miners/{}", FOREMAN_API, self.client_id, miner_id);
+        let url = format!(
+            "{}/clients/{}/miners/{}",
+            FOREMAN_API, self.client_id, miner_id
+        );
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .send()
@@ -107,8 +115,7 @@ impl ForemanClient {
             return Ok(None);
         }
 
-        let m: ForemanMiner = resp.json().await
-            .context("Foreman miner parse failed")?;
+        let m: ForemanMiner = resp.json().await.context("Foreman miner parse failed")?;
 
         Ok(Some(MinerStatus {
             miner_id: m.id,
@@ -127,7 +134,8 @@ impl ForemanClient {
     pub async fn reboot_miner(&self, miner_id: u64) -> Result<bool> {
         let url = format!("{}/actions/reboot/{}", FOREMAN_API, miner_id);
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .send()

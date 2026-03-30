@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features
+
+      - name: Run all tests
+        run: cargo test --all-targets
+
+      - name: Run integration tests
+        run: cargo test --test memo_merkle_test
+
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit proof bundle
+        run: cargo run --quiet --bin zap1_audit -- --bundle examples/live_ownership_attest_proof.json
+
+      - name: Schema validator
+        run: cargo run --quiet --bin zap1_schema -- --witness examples/schema_witness.json
+
+      - name: Schema validator JSON output
+        run: cargo run --quiet --bin zap1_schema -- --witness examples/schema_witness.json --json
+
+      - name: ZIP 302 TVLV roundtrip
+        run: |
+          memo_hex=$(cargo run --quiet --bin zip302_tvlv -- encode examples/zip302_parts_example.json | tail -n 1)
+          cargo run --quiet --bin zip302_tvlv -- decode "$memo_hex"
+
+      - name: Operator status (green fixture)
+        run: cargo run --quiet --bin zap1_ops -- --from-dir examples/zap1_ops_fixture --json
+
+      - name: Operator status (must fail on critical fixture)
+        run: |
+          if cargo run --quiet --bin zap1_ops -- --from-dir examples/zap1_ops_fixture_critical --json; then
+            echo "expected failure on critical fixture"
+            exit 1
+          fi
+
+      - name: Operator status unit tests
+        run: cargo test --quiet --bin zap1_ops
+
+      - name: Liveness script compiles
+        run: python3 -m py_compile scripts/check_anchor_liveness.py

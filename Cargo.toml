@@ -16,6 +16,10 @@ path = "src/bin/anchor_root.rs"
 name = "zaino_adapter"
 path = "src/bin/zaino_adapter.rs"
 
+[[bin]]
+name = "zap1_schema"
+path = "src/bin/zap1_schema.rs"
+
 [dependencies]
 # Zcash
 zcash_client_backend = { version = "0.21", default-features = false, features = ["orchard"] }

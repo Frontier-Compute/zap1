@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "event_type": "PROGRAM_ENTRY",
+      "wallet_hash": "e2e_wallet_20260327",
+      "expected_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
+    },
+    {
+      "event_type": "PROGRAM_ENTRY",
+      "wallet_hash": "e2e_wallet_20260327"
+    },
+    {
+      "event_type": "HOSTING_PAYMENT",
+      "serial_number": "Z15P-TEST-001",
+      "month": 3,
+      "year": 2026
+    }
+  ]
+}

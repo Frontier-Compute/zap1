@@ -90,6 +90,7 @@ pub fn router(state: AppState) -> Router {
         .route("/badge/status.svg", get(badge_status))
         .route("/badge/leaf/{leaf_hash}", get(badge_leaf))
         .route("/build/info", get(build_info))
+        .route("/memo/decode", post(memo_decode_endpoint))
         .route("/webhooks", get(list_webhooks))
         .route("/webhooks/register", post(register_webhook))
         .route("/webhooks/{id}", delete(delete_webhook))
@@ -1594,4 +1595,67 @@ async fn admin_overview(
         "total_leaves": total_leaves,
         "total_anchors": total_anchors,
     })))
+}
+
+/// Decode any Zcash shielded memo. POST hex-encoded memo bytes, get back format classification.
+/// Uses zcash-memo-decode crate (zero deps, wallet-importable).
+async fn memo_decode_endpoint(
+    body: String,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let hex_str = body.trim();
+    let bytes = hex::decode(hex_str)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid hex: {e}")))?;
+
+    let decoded = zcash_memo_decode::decode(&bytes);
+    let fmt = zcash_memo_decode::label(&decoded);
+
+    let result = match decoded {
+        zcash_memo_decode::MemoFormat::Text(s) => serde_json::json!({
+            "format": fmt,
+            "text": s,
+        }),
+        zcash_memo_decode::MemoFormat::Attestation {
+            protocol,
+            event_type,
+            event_label,
+            payload_hash,
+            raw,
+        } => serde_json::json!({
+            "format": fmt,
+            "protocol": format!("{:?}", protocol),
+            "event_type": format!("0x{:02x}", event_type),
+            "event_label": event_label,
+            "payload_hash": hex::encode(payload_hash),
+            "raw": raw,
+        }),
+        zcash_memo_decode::MemoFormat::Zip302Tvlv { parts } => {
+            let parts_json: Vec<serde_json::Value> = parts.iter().map(|p| {
+                serde_json::json!({
+                    "part_type": p.part_type,
+                    "version": p.version,
+                    "value_hex": hex::encode(&p.value),
+                    "value_utf8": String::from_utf8(p.value.clone()).ok(),
+                })
+            }).collect();
+            serde_json::json!({
+                "format": fmt,
+                "parts": parts_json,
+            })
+        }
+        zcash_memo_decode::MemoFormat::Empty => serde_json::json!({
+            "format": fmt,
+        }),
+        zcash_memo_decode::MemoFormat::Binary(data) => serde_json::json!({
+            "format": fmt,
+            "length": data.len(),
+            "hex": hex::encode(&data),
+        }),
+        zcash_memo_decode::MemoFormat::Unknown { first_byte, length } => serde_json::json!({
+            "format": fmt,
+            "first_byte": format!("0x{:02x}", first_byte),
+            "length": length,
+        }),
+    };
+
+    Ok(Json(result))
 }

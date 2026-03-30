@@ -5,7 +5,6 @@ pub mod db;
 pub mod foreman;
 pub mod keys;
 pub mod memo;
-pub mod memo_decode;
 pub mod merkle;
 pub mod models;
 pub mod node;

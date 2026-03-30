@@ -24,6 +24,10 @@ path = "src/bin/zap1_schema.rs"
 name = "memo_scan"
 path = "src/bin/memo_scan.rs"
 
+[[bin]]
+name = "zap1_export"
+path = "src/bin/zap1_export.rs"
+
 [dependencies]
 # Zcash
 zcash_client_backend = { version = "0.21", default-features = false, features = ["orchard"] }

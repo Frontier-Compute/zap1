@@ -1,0 +1,65 @@
+{
+  "protocol": "ZAP1",
+  "generated_at": "2026-03-30T23:14:22.778367434+00:00",
+  "scope": "wallet=e2e_wallet_2",
+  "proofs": [
+    {
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "event_type": "PROGRAM_ENTRY",
+      "wallet_hash": "e2e_wallet_20260327",
+      "serial_number": null,
+      "created_at": "2026-03-27 03:28:57",
+      "proof_steps": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "anchor_txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
+      "anchor_height": 3286631,
+      "witness": {
+        "hash_function": "BLAKE2b-256",
+        "personalization": "NordicShield_",
+        "recompute": "hash(type_byte || length_prefixed_fields) with NordicShield_ personalization",
+        "serial_number": null,
+        "wallet_hash_preimage": "e2e_wallet_20260327"
+      }
+    },
+    {
+      "leaf_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+      "event_type": "OWNERSHIP_ATTEST",
+      "wallet_hash": "e2e_wallet_20260327",
+      "serial_number": "Z15P-E2E-001",
+      "created_at": "2026-03-27T03:29:26.266798995+00:00",
+      "proof_steps": [
+        {
+          "hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+          "position": "left"
+        }
+      ],
+      "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "anchor_txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
+      "anchor_height": 3286631,
+      "witness": {
+        "hash_function": "BLAKE2b-256",
+        "personalization": "NordicShield_",
+        "recompute": "hash(type_byte || length_prefixed_fields) with NordicShield_ personalization",
+        "serial_number": "Z15P-E2E-001",
+        "wallet_hash_preimage": "e2e_wallet_20260327"
+      }
+    }
+  ],
+  "verification": {
+    "sdk": "zap1-verify",
+    "crate_url": "https://crates.io/crates/zap1-verify",
+    "memo_decoder": "https://crates.io/crates/zcash-memo-decode",
+    "procedure": [
+      "for each proof entry, verify the Merkle proof from leaf_hash to root",
+      "use BLAKE2b-256 with NordicShield_MRK personalization for tree nodes",
+      "confirm the root matches the anchor_txid on Zcash mainnet",
+      "confirm the anchor_txid is mined at anchor_height",
+      "optionally use zap1_schema --emit-witness to verify preimage fields"
+    ]
+  }
+}

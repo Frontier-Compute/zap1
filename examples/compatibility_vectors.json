@@ -1,0 +1,73 @@
+{
+  "description": "ZAP1 compatibility test vectors. Any implementation that produces these hashes is compatible.",
+  "hash_function": "BLAKE2b-256",
+  "personalization": "NordicShield_",
+  "node_personalization": "NordicShield_MRK",
+  "vectors": [
+    {
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "input_fields": {
+        "wallet_hash": "e2e_wallet_20260327"
+      },
+      "note": "no length prefix on PROGRAM_ENTRY",
+      "expected_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
+    },
+    {
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "input_fields": {
+        "wallet_hash": "test_wallet_abc"
+      },
+      "expected_hash": "771fd5dbf5245e22a43218e4312f9a6e9b020a03a1617e70ee91d10914e82507"
+    },
+    {
+      "event_type": "OWNERSHIP_ATTEST",
+      "type_byte": "0x02",
+      "input_fields": {
+        "wallet_hash": "e2e_wallet_20260327",
+        "serial_number": "Z15P-E2E-001"
+      },
+      "note": "both fields length-prefixed with 2-byte big-endian length",
+      "expected_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
+    },
+    {
+      "event_type": "HOSTING_PAYMENT",
+      "type_byte": "0x05",
+      "input_fields": {
+        "serial_number": "Z15P-TEST-001",
+        "month": 3,
+        "year": 2026
+      },
+      "note": "serial is length-prefixed, month and year are u32 big-endian",
+      "expected_hash": "dac74f263c985f808aa398d05500f4b6515875fa627cd0c85d5a82ea8b383367"
+    },
+    {
+      "event_type": "MERKLE_ROOT",
+      "type_byte": "0x09",
+      "input_fields": {
+        "merkle_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+      },
+      "note": "raw 32-byte root, no hash wrapping",
+      "expected_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+    }
+  ],
+  "merkle_tree_vectors": [
+    {
+      "description": "two-leaf tree from the first mainnet anchor",
+      "leaves": [
+        "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+        "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
+      ],
+      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "note": "NordicShield_MRK personalization for internal nodes"
+    }
+  ],
+  "memo_wire_format": {
+    "prefix": "ZAP1",
+    "legacy_prefix": "NSM1",
+    "separator": ":",
+    "example": "ZAP1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+    "total_bytes": 73
+  }
+}

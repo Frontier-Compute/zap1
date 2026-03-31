@@ -12,7 +12,7 @@ bash scripts/evaluate.sh
 
 ## Step by step
 
-### 1. Protocol metadata
+## 1. Protocol metadata
 
 Open:
 

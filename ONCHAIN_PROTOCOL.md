@@ -69,18 +69,18 @@ NordicShield_
 Input construction by type:
 
 ```text
-PROGRAM_ENTRY      = BLAKE2b_32(wallet_hash)
-OWNERSHIP_ATTEST   = BLAKE2b_32(wallet_hash || serial_number)
-CONTRACT_ANCHOR    = BLAKE2b_32(serial_number || contract_sha256)
-DEPLOYMENT         = BLAKE2b_32(serial_number || facility_id || timestamp_be)
-HOSTING_PAYMENT    = BLAKE2b_32(serial_number || month_be || year_be)
-SHIELD_RENEWAL     = BLAKE2b_32(wallet_hash || year_be)
-TRANSFER           = BLAKE2b_32(old_wallet || new_wallet || serial_number)
-EXIT               = BLAKE2b_32(wallet_hash || serial_number || timestamp_be)
+PROGRAM_ENTRY      = BLAKE2b_32(0x01 || wallet_hash)
+OWNERSHIP_ATTEST   = BLAKE2b_32(0x02 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number)
+CONTRACT_ANCHOR    = BLAKE2b_32(0x03 || len(serial_number) || serial_number || len(contract_sha256) || contract_sha256)
+DEPLOYMENT         = BLAKE2b_32(0x04 || len(serial_number) || serial_number || len(facility_id) || facility_id || timestamp_be)
+HOSTING_PAYMENT    = BLAKE2b_32(0x05 || len(serial_number) || serial_number || month_be || year_be)
+SHIELD_RENEWAL     = BLAKE2b_32(0x06 || len(wallet_hash) || wallet_hash || year_be)
+TRANSFER           = BLAKE2b_32(0x07 || len(old_wallet) || old_wallet || len(new_wallet) || new_wallet || len(serial_number) || serial_number)
+EXIT               = BLAKE2b_32(0x08 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number || timestamp_be)
 MERKLE_ROOT        = current_root
-STAKING_DEPOSIT    = BLAKE2b_32(wallet_hash || amount_zat_be || validator_id)
-STAKING_WITHDRAW   = BLAKE2b_32(wallet_hash || amount_zat_be)
-STAKING_REWARD     = BLAKE2b_32(wallet_hash || epoch_be || reward_zat_be)
+STAKING_DEPOSIT    = BLAKE2b_32(0x0A || wallet_hash || amount_zat_be || validator_id)
+STAKING_WITHDRAW   = BLAKE2b_32(0x0B || wallet_hash || amount_zat_be)
+STAKING_REWARD     = BLAKE2b_32(0x0C || wallet_hash || epoch_be || reward_zat_be)
 ```
 
 Implementation notes:
@@ -338,7 +338,7 @@ Dashboard notes:
 - hosting cost is tier-aware
 - the rendered dashboard is a participant convenience surface, not a protocol proof surface
 
-## 14. Profiles
+## 12. Profiles
 
 ZAP1 defines a base profile and reserves extension points for future proving and credential systems.
 
@@ -367,7 +367,7 @@ This profile enables cross-operator credential portability: a credential derived
 
 The credential profile depends on the proof profile and is not expected to deploy before proving system integration stabilizes.
 
-## 15. Versioning and Extension Policy
+## 13. Versioning and Extension Policy
 
 - The event type registry (0x01 - 0x0C) is append-only. Existing types are never redefined.
 - New event types are allocated by incrementing the type byte. Types 0x0D - 0xFF are reserved.

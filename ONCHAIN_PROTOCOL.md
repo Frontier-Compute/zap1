@@ -1,5 +1,7 @@
 # ONCHAIN_PROTOCOL.md
 
+**Specification Version: 3.0.0-draft**
+
 **Version:** 2.2.0  
 **Date:** 2026-03-28  
 **Status:** Deployed on Zcash mainnet
@@ -374,3 +376,14 @@ The credential profile depends on the proof profile and is not expected to deplo
 - Profiles are namespaced: `base`, `proof`, `credential`. New profiles do not modify the base profile.
 - Hash construction rules for the base profile are frozen at v2.2.0. Changes require a new major version.
 - The `NordicShield_` personalization is deployment-specific. Other deployments may use different personalization strings without conflicting with the protocol specification. The zap1-verify SDK (v0.2.0+) accepts configurable personalization.
+
+## Changelog
+
+### 3.0.0-draft (2026-03-31)
+- Added type byte prefix to leaf hash construction (Section 3)
+- Renumbered sections 12-15 to fix gap from removed sections
+- Clarified domain separation constants
+- Added STAKING_DEPOSIT, STAKING_WITHDRAW, STAKING_REWARD event types
+
+### 2.2.0
+- Initial public specification

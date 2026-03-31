@@ -1,15 +1,17 @@
 # ZAP1 Test Vectors
 
-Date: 2026-03-28
+Date: 2026-03-31
 Status: Protocol specification deliverable
 Sources:
 
 - `tests/memo_merkle_test.rs`
 - `verify_proof.py`
 - `src/memo.rs`
+- `conformance/hash_vectors.json`
+- `conformance/tree_vectors.json`
 - `ONCHAIN_PROTOCOL.md`
 
-This document publishes a standalone JSON test vector suite for the nine deployed ZAP1 event types (`0x01` through `0x09`).
+This document publishes a standalone test vector suite for all twelve ZAP1 event types (`0x01` through `0x0C`), plus Merkle tree construction vectors and memo encoding vectors.
 
 Hash rules:
 
@@ -28,8 +30,8 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 
 ```json
 {
-  "suite": "ZAP1 deployed event vectors",
-  "version": "2026-03-28",
+  "suite": "ZAP1 event vectors",
+  "version": "2026-03-31",
   "leaf_hash_function": "BLAKE2b-256",
   "leaf_personalization": "NordicShield_",
   "node_hash_function": "BLAKE2b-256",
@@ -38,6 +40,8 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
     "zap1/tests/memo_merkle_test.rs",
     "verify_proof.py",
     "zap1/src/memo.rs",
+    "conformance/hash_vectors.json",
+    "conformance/tree_vectors.json",
     "ONCHAIN_PROTOCOL.md"
   ],
   "vectors": [
@@ -141,6 +145,132 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "expected_leaf_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
       "hash_function_used": "raw 32-byte Merkle root payload (no additional BLAKE2b leaf hashing for type 0x09)",
       "construction_rule": "MERKLE_ROOT = current_root"
+    },
+    {
+      "event_type": "STAKING_DEPOSIT",
+      "type_byte": "0x0A",
+      "status": "reserved_for_crosslink",
+      "construction_rule": "BLAKE2b_32(0x0A || wallet_hash || amount_zat_be || validator_id)",
+      "note": "No hash functions implemented yet. Hash construction is preliminary and subject to change when the Crosslink staking protocol finalizes. Test vectors will be published when the type activates."
+    },
+    {
+      "event_type": "STAKING_WITHDRAW",
+      "type_byte": "0x0B",
+      "status": "reserved_for_crosslink",
+      "construction_rule": "BLAKE2b_32(0x0B || wallet_hash || amount_zat_be)",
+      "note": "No hash functions implemented yet. Hash construction is preliminary and subject to change when the Crosslink staking protocol finalizes. Test vectors will be published when the type activates."
+    },
+    {
+      "event_type": "STAKING_REWARD",
+      "type_byte": "0x0C",
+      "status": "reserved_for_crosslink",
+      "construction_rule": "BLAKE2b_32(0x0C || wallet_hash || epoch_be || reward_zat_be)",
+      "note": "No hash functions implemented yet. Hash construction is preliminary and subject to change when the Crosslink staking protocol finalizes. Test vectors will be published when the type activates."
+    }
+  ],
+  "conformance_vectors": [
+    {
+      "description": "mainnet PROGRAM_ENTRY from block 3,286,631",
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "input_fields": {
+        "wallet_hash": "e2e_wallet_20260327"
+      },
+      "expected_leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "source": "conformance/hash_vectors.json, tests/memo_merkle_test.rs (mainnet_program_entry_e2e_wallet)"
+    },
+    {
+      "description": "alternate PROGRAM_ENTRY wallet",
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "input_fields": {
+        "wallet_hash": "test_wallet_abc"
+      },
+      "expected_leaf_hash": "771fd5dbf5245e22a43218e4312f9a6e9b020a03a1617e70ee91d10914e82507",
+      "source": "conformance/hash_vectors.json"
+    },
+    {
+      "description": "mainnet OWNERSHIP_ATTEST",
+      "event_type": "OWNERSHIP_ATTEST",
+      "type_byte": "0x02",
+      "input_fields": {
+        "wallet_hash": "e2e_wallet_20260327",
+        "serial_number": "Z15P-E2E-001"
+      },
+      "expected_leaf_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+      "source": "conformance/hash_vectors.json"
+    },
+    {
+      "description": "HOSTING_PAYMENT with test serial",
+      "event_type": "HOSTING_PAYMENT",
+      "type_byte": "0x05",
+      "input_fields": {
+        "serial_number": "Z15P-TEST-001",
+        "month": 3,
+        "year": 2026
+      },
+      "expected_leaf_hash": "dac74f263c985f808aa398d05500f4b6515875fa627cd0c85d5a82ea8b383367",
+      "source": "conformance/hash_vectors.json"
+    }
+  ],
+  "merkle_tree_vectors": [
+    {
+      "description": "empty tree - root is 32 zero bytes",
+      "leaves": [],
+      "expected_root": "0000000000000000000000000000000000000000000000000000000000000000",
+      "note": "compute_root returns all zeros for an empty leaf set",
+      "source": "conformance/tree_vectors.json"
+    },
+    {
+      "description": "single leaf - root equals the leaf hash",
+      "leaves": [
+        "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
+      ],
+      "expected_root": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "note": "no internal node hashing needed for a single leaf",
+      "source": "conformance/tree_vectors.json"
+    },
+    {
+      "description": "two-leaf tree from mainnet anchor at block 3,286,631",
+      "leaves": [
+        "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+        "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
+      ],
+      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "node_hash_function": "BLAKE2b-256 with NordicShield_MRK personalization",
+      "construction_rule": "BLAKE2b_32(leaf[0] || leaf[1])",
+      "source": "conformance/tree_vectors.json, conformance/hash_vectors.json"
+    }
+  ],
+  "memo_encoding_vectors": [
+    {
+      "description": "PROGRAM_ENTRY memo wire format",
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "payload_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "expected_memo_string": "ZAP1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "expected_byte_length": 73,
+      "note": "Format is {prefix}:{type_hex}:{payload_hex}. All fields are ASCII.",
+      "source": "conformance/hash_vectors.json memo_wire_format"
+    },
+    {
+      "description": "MERKLE_ROOT memo wire format",
+      "event_type": "MERKLE_ROOT",
+      "type_byte": "0x09",
+      "payload_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "expected_memo_string": "ZAP1:09:024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "expected_byte_length": 73,
+      "note": "MERKLE_ROOT payload is the raw root, not a second hash"
+    },
+    {
+      "description": "legacy NSM1 prefix - accepted during decode",
+      "event_type": "PROGRAM_ENTRY",
+      "type_byte": "0x01",
+      "payload_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "expected_memo_string": "NSM1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "expected_byte_length": 73,
+      "note": "NSM1 prefix is accepted during decode for backward compatibility. New memos always encode with ZAP1.",
+      "source": "tests/memo_merkle_test.rs (legacy_nsm1_prefix_decodes)"
     }
   ]
 }
@@ -148,6 +278,10 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 
 ## Notes
 
-- The sample values are deterministic and can be recomputed with the hash functions in `verify_proof.py`.
+- All hash values in this document are verified against `conformance/hash_vectors.json`, `conformance/tree_vectors.json`, and `tests/memo_merkle_test.rs`. No values are fabricated.
+- The sample values are deterministic and can be recomputed with the hash functions in `verify_proof.py` or `src/memo.rs`.
 - Any implementation can use these vectors to confirm leaf construction matches ZAP1.
-- `MERKLE_ROOT` is included because it is one of the nine deployed ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`.
+- `MERKLE_ROOT` (0x09) is included because it is one of the twelve ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`. The payload is the raw 32-byte root.
+- `STAKING_DEPOSIT` (0x0A), `STAKING_WITHDRAW` (0x0B), and `STAKING_REWARD` (0x0C) are reserved for Crosslink. No hash functions are implemented in the reference codebase. Their construction rules are preliminary. Concrete test vectors will be added when these types activate.
+- Merkle tree vectors use `NordicShield_MRK` personalization for internal node hashing. Odd-layer duplication: if a layer has an odd number of nodes, the final node is duplicated before pairing.
+- Memo encoding vectors cover the `ZAP1:{type_hex}:{payload_hex}` wire format (73 ASCII bytes) and the legacy `NSM1` prefix accepted during decode.

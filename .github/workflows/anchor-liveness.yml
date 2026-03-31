@@ -19,3 +19,6 @@ jobs:
 
       - name: Run anchor liveness proof
         run: python3 scripts/check_anchor_liveness.py
+
+      - name: Validate API schemas
+        run: python3 conformance/check_api.py

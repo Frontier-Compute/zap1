@@ -1,0 +1,100 @@
+{
+  "description": "ZAP1 API response schemas. Consumers can validate responses against these contracts.",
+  "version": "2",
+  "schemas": {
+    "/protocol/info": {
+      "required": ["protocol", "version", "event_types", "deployed_types", "hash_function"],
+      "properties": {
+        "protocol": { "type": "string", "const": "ZAP1" },
+        "version": { "type": "string" },
+        "event_types": { "type": "integer" },
+        "deployed_types": { "type": "integer" },
+        "reserved_types": { "type": "integer" },
+        "hash_function": { "type": "string", "const": "BLAKE2b-256" },
+        "leaf_personalization": { "type": "string" },
+        "node_personalization": { "type": "string" }
+      }
+    },
+    "/stats": {
+      "required": ["total_anchors", "total_leaves"],
+      "properties": {
+        "total_anchors": { "type": "integer", "minimum": 0 },
+        "total_leaves": { "type": "integer", "minimum": 0 },
+        "first_anchor_block": { "type": ["integer", "null"] },
+        "last_anchor_block": { "type": ["integer", "null"] }
+      }
+    },
+    "/health": {
+      "required": ["last_scanned_height", "chain_tip", "sync_lag", "scanner_operational", "rpc_reachable"],
+      "properties": {
+        "last_scanned_height": { "type": "integer" },
+        "chain_tip": { "type": "integer" },
+        "sync_lag": { "type": "integer", "minimum": 0 },
+        "pending_invoices": { "type": "integer", "minimum": 0 },
+        "scanner_operational": { "type": "boolean" },
+        "network": { "type": "string" },
+        "rpc_reachable": { "type": "boolean" }
+      }
+    },
+    "/events": {
+      "required": ["protocol", "total_returned", "events"],
+      "properties": {
+        "protocol": { "type": "string", "const": "ZAP1" },
+        "total_returned": { "type": "integer" },
+        "events": {
+          "type": "array",
+          "items": {
+            "required": ["leaf_hash", "event_type", "wallet_hash", "verify_url", "proof_url"],
+            "properties": {
+              "leaf_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+              "event_type": { "type": "string" },
+              "wallet_hash": { "type": "string" },
+              "serial_number": { "type": ["string", "null"] },
+              "created_at": { "type": "string" },
+              "verify_url": { "type": "string" },
+              "proof_url": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "/anchor/history": {
+      "required": ["anchors", "total"],
+      "properties": {
+        "anchors": {
+          "type": "array",
+          "items": {
+            "required": ["root", "leaf_count"],
+            "properties": {
+              "created_at": { "type": "string" },
+              "height": { "type": ["integer", "null"] },
+              "leaf_count": { "type": "integer" },
+              "root": { "type": "string", "minLength": 64 },
+              "txid": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "last_anchor_age_hours": { "type": ["integer", "null"] },
+        "total": { "type": "integer" }
+      }
+    },
+    "/verify/{hash}/check": {
+      "required": ["protocol", "valid", "leaf_hash", "root"],
+      "properties": {
+        "protocol": { "type": "string", "const": "ZAP1" },
+        "valid": { "type": "boolean" },
+        "leaf_hash": { "type": "string" },
+        "event_type": { "type": "string" },
+        "root": { "type": "string" },
+        "server_verified": { "type": "boolean" },
+        "verification_sdk": { "type": "string" }
+      }
+    },
+    "/memo/decode": {
+      "required": ["format"],
+      "properties": {
+        "format": { "type": "string", "enum": ["text", "zap1", "nsm1", "zip302", "empty", "binary", "unknown"] }
+      }
+    }
+  }
+}

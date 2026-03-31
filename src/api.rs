@@ -1727,7 +1727,10 @@ async fn admin_anchor_qr(
             .unwrap_or(false);
         let query_ok = q.key.as_deref().map(|k| k == expected).unwrap_or(false);
         if !header_ok && !query_ok {
-            return Err((StatusCode::UNAUTHORIZED, "Invalid or missing API key".into()));
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Invalid or missing API key".into(),
+            ));
         }
     }
 
@@ -1741,11 +1744,10 @@ async fn admin_anchor_qr(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let root = root.ok_or((StatusCode::BAD_REQUEST, "no Merkle root yet".into()))?;
-    let addr = state
-        .config
-        .anchor_to_address
-        .as_deref()
-        .ok_or((StatusCode::BAD_REQUEST, "ANCHOR_TO_ADDRESS not configured".into()))?;
+    let addr = state.config.anchor_to_address.as_deref().ok_or((
+        StatusCode::BAD_REQUEST,
+        "ANCHOR_TO_ADDRESS not configured".into(),
+    ))?;
 
     let memo_text = format!("ZAP1:09:{}", root.root_hash);
     let memo_hex = hex::encode(memo_text.as_bytes());
@@ -1789,7 +1791,11 @@ button {{ background:#d4a843; color:#0a0e17; border:none; padding:10px 20px; bor
   <button type="submit">Record Anchor</button>
 </form>
 </body></html>"#,
-        if status == "up to date" { "#4caf50" } else { "#d4a843" },
+        if status == "up to date" {
+            "#4caf50"
+        } else {
+            "#d4a843"
+        },
         root.leaf_count / 4 + 1,
         status,
         qr_svg,

@@ -28,6 +28,10 @@ path = "src/bin/memo_scan.rs"
 name = "zap1_export"
 path = "src/bin/zap1_export.rs"
 
+[[bin]]
+name = "keygen"
+path = "src/bin/keygen.rs"
+
 [dependencies]
 # Zcash
 zcash_client_backend = { version = "0.21", default-features = false, features = ["orchard"] }
@@ -36,6 +40,7 @@ zcash_protocol = { version = "0.7", default-features = false }
 zcash_primitives = { version = "0.26", default-features = false }
 orchard = "0.12"
 zip32 = "0.2"
+getrandom = "0.2"
 
 # Web
 axum = "0.8"

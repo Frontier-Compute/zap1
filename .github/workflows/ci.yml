@@ -72,3 +72,19 @@ jobs:
 
       - name: Liveness script compiles
         run: python3 -m py_compile scripts/check_anchor_liveness.py
+
+      - name: Conformance protocol checks
+        run: python3 conformance/check.py
+
+      - name: Compatibility vectors
+        run: python3 scripts/check_compatibility.py
+
+      - name: Verify export package offline
+        run: cargo run --quiet --bin zap1_audit -- --export conformance/valid_export.json
+
+      - name: Reject invalid bundle
+        run: |
+          if cargo run --quiet --bin zap1_audit -- --bundle conformance/invalid_bundle.json 2>/dev/null; then
+            echo "expected failure on invalid bundle"
+            exit 1
+          fi

@@ -8,7 +8,7 @@ cd zap1
 bash scripts/evaluate.sh
 ```
 
-12 checks. Live API, crates.io, tests, proof bundles, schema validation, memo decode, all surfaces. Takes about 2 minutes with Rust installed.
+14 checks. Live API, crates.io, tests, proof bundles, schema validation, memo decode, all surfaces. Takes about 2 minutes with Rust installed.
 
 ## Step by step
 
@@ -176,7 +176,26 @@ Confirms:
 
 Operator runbook: `https://github.com/Frontier-Compute/zap1/blob/main/docs/OPERATOR_RUNBOOK.md`
 
-## 13. ZIP draft
+## 13. Conformance kit
+
+```bash
+python3 conformance/check.py        # 14 protocol checks
+python3 conformance/check_api.py     # 21 API schema checks
+python3 scripts/check_compatibility.py  # 6 hash vectors
+```
+
+Confirms:
+
+- hash vectors match across implementations
+- API responses match frozen JSON schemas
+- valid proof bundles verify, invalid bundles fail
+- export packages verify offline
+
+Consumer contracts: `conformance/contracts/` (wallet, explorer, indexer, operator)
+OpenAPI spec: `conformance/openapi.yaml`
+Reference clients: `conformance/clients/` (Python, TypeScript)
+
+## 14. ZIP draft
 
 PR:
 

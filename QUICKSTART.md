@@ -1,11 +1,11 @@
-# ZAP1 Evaluator Quickstart
+# ZAP1 Quickstart
 
 ## Fastest path
 
 ```bash
 git clone https://github.com/Frontier-Compute/zap1.git
 cd zap1
-bash scripts/evaluate.sh
+bash scripts/check.sh
 ```
 
 14 checks. Live API, crates.io, tests, proof bundles, schema validation, memo decode, all surfaces. Takes about 2 minutes with Rust installed.

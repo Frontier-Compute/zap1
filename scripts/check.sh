@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ZAP1 evaluator script. Run this from the repo root to verify all claims.
+# ZAP1 validation script. Run this from the repo root to verify all claims.
 # No arguments needed. Checks live API, runs tests, validates proofs.
 
 API="https://pay.frontiercompute.io"
@@ -24,7 +24,7 @@ check() {
   fi
 }
 
-echo "ZAP1 evaluator check"
+echo "ZAP1 validation check"
 echo "===================="
 echo
 

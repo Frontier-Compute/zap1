@@ -6,12 +6,12 @@ Open-source attestation protocol for Zcash. Commits typed lifecycle events to a 
 
 3 mainnet anchors. 12 leaves. 124 tests. 55 automated checks. 9 binaries. MIT licensed.
 
-[ZIP draft PR #1243](https://github.com/zcash/zips/pull/1243) | [EVALUATOR_QUICKSTART](EVALUATOR_QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
+[ZIP draft PR #1243](https://github.com/zcash/zips/pull/1243) | [QUICKSTART](QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
 
 ## Verify in one command
 
 ```bash
-git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash scripts/evaluate.sh
+git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash scripts/check.sh
 ```
 
 ## What it does
@@ -21,7 +21,7 @@ git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash script
 - **Verification**: standalone SDK on [crates.io](https://crates.io/crates/zap1-verify), browser verifier, offline audit tools. No server trust required.
 - **Ecosystem tooling**: universal [memo decoder](https://crates.io/crates/zcash-memo-decode), [ZIP 302 TVLV reference](src/bin/zip302_tvlv.rs), Zaino compact block [adapter](src/bin/zaino_adapter.rs), [selective disclosure export](src/bin/zap1_export.rs)
 
-Nordic Shield is the first production deployment. The protocol is application-agnostic.
+One production deployment is live on mainnet. The protocol is application-agnostic.
 
 ## Protocol
 
@@ -86,7 +86,7 @@ The standalone Rust + WASM verifier is available at
 It implements ZAP1 leaf hashing, Merkle proof walking, and browser-friendly
 verification primitives without depending on the reference implementation server.
 
-## Operator and evaluator tools
+## Operator tools
 
 ```bash
 cargo run --bin zap1_audit -- --bundle examples/live_ownership_attest_proof.json
@@ -138,7 +138,7 @@ Reference clients: [Python](conformance/clients/zap1_client.py) | [TypeScript](c
 python3 conformance/check.py        # 14 protocol checks
 python3 conformance/check_api.py     # 21 API schema checks
 python3 scripts/check_compatibility.py  # 6 hash vectors
-bash scripts/evaluate.sh             # 14 end-to-end checks
+bash scripts/check.sh             # 14 end-to-end checks
 ```
 
 See [conformance/](conformance/) for fixtures, schemas, versioning policy, and consumer contracts.
@@ -171,7 +171,7 @@ A draft ZIP for the ZAP1 attestation format is open at [zcash/zips PR #1243](htt
 cargo test --release --test memo_merkle_test
 ```
 
-23 tests covering memo encode/decode, hash determinism, Merkle tree computation, proof generation, and proof verification.
+23 tests in this file covering memo encode/decode, hash determinism, Merkle tree computation, proof generation, and proof verification.
 
 ## License
 

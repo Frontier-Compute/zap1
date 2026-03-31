@@ -877,7 +877,7 @@ async fn verify_check(
     })))
 }
 
-/// Anchor history for evaluators and auditors.
+/// Anchor history for auditors and validators.
 async fn anchor_history(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {

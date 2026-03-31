@@ -95,7 +95,7 @@ Returned by `zap1_export` and consumed by `zap1_audit --export`.
 | zap1_audit | export package | `zap1_audit --export package.json` |
 | zap1_audit | proof URL | `zap1_audit --bundle-url https://...` |
 | zap1_schema | witness validation | `zap1_schema --witness events.json --emit-witness` |
-| evaluate.sh | full stack check | `bash scripts/evaluate.sh` |
+| check.sh | full stack check | `bash scripts/check.sh` |
 
 ## Compatibility
 

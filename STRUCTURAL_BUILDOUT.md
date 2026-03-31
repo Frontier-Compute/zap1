@@ -1,6 +1,6 @@
 # Structural Buildout
 
-This repo now exposes three operator and evaluator tools.
+This repo now exposes three operator and validation tools.
 
 ## 1. `zap1_audit`
 

@@ -1,6 +1,6 @@
 //! zap1-verify - Standalone Merkle proof verifier for the ZAP1 protocol.
 //!
-//! Zero-trust verification of Nordic Shield on-chain commitments.
+//! Standalone verification of ZAP1 on-chain attestation commitments.
 //! Implements BLAKE2b-256 leaf hashing for all 9 ZAP1 event types
 //! and Merkle proof path walking with `NordicShield_MRK` node personalization.
 //!

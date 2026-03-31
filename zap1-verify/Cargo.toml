@@ -2,7 +2,7 @@
 name = "zap1-verify"
 version = "0.2.0"
 edition = "2021"
-description = "Standalone Merkle proof verifier for the ZAP1 on-chain protocol (Nordic Shield)"
+description = "Standalone Merkle proof verifier for the ZAP1 attestation protocol on Zcash"
 license = "MIT"
 authors = ["zk_nd3r <zk_nd3r@frontiercompute.io>"]
 repository = "https://github.com/Frontier-Compute/zap1-verify"

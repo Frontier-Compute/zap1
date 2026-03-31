@@ -43,7 +43,7 @@ pub async fn payment_received(config: &Config, invoice: &Invoice, amount_zat: u6
     let memo = invoice.memo.as_deref().unwrap_or("");
 
     let msg = format!(
-        "Nordic Shield Payment\n\n\
+        "ZAP1 Payment\n\n\
          {:.4} ZEC received (invoice: {:.4} ZEC)\n\
          Status: {}\n\
          Memo: {}\n\
@@ -80,7 +80,7 @@ pub async fn invoice_created(config: &Config, invoice: &Invoice) {
     let memo = invoice.memo.as_deref().unwrap_or("");
 
     let msg = format!(
-        "Nordic Shield Invoice Created\n\n\
+        "ZAP1 Invoice Created\n\n\
          {:.4} ZEC\n\
          Memo: {}\n\
          Invoice: {}\n\

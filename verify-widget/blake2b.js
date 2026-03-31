@@ -135,7 +135,7 @@ export function bytesToHex(bytes) {
   return hex;
 }
 
-// Nordic Shield personalizations
+// ZAP1 BLAKE2b personalizations
 
 // "NordicShield_\x00\x00\x00" (13 chars + 3 null = 16 bytes)
 const LEAF_PERSONAL = new Uint8Array([

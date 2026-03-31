@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-ZAP1 uses the Zcash blockchain as the source of truth for attestation operations. Every significant event is represented as a structured memo commitment and aggregated into a BLAKE2b Merkle tree whose root is periodically anchored to Zcash. Participants verify ownership, deployment, hosting history, renewal history, transfer history, and exit history from the chain record plus Merkle proofs, with no trust required in a private operator database. Nordic Shield is the first production deployment of this protocol.
+ZAP1 uses the Zcash blockchain as the source of truth for attestation operations. Every significant event is represented as a structured memo commitment and aggregated into a BLAKE2b Merkle tree whose root is periodically anchored to Zcash. Participants verify ownership, deployment, hosting history, renewal history, transfer history, and exit history from the chain record plus Merkle proofs, with no trust required in a private operator database. One production deployment is live on mainnet.
 
 ZAP1 is the open attestation protocol layer, implemented through the reference tooling and operating procedures described here. No participant PII is recorded on-chain; only wallet hashes, serial hashes, and derived payload hashes are used.
 

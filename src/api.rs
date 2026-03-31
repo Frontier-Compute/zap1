@@ -95,6 +95,8 @@ pub fn router(state: AppState) -> Router {
         .route("/webhooks", get(list_webhooks))
         .route("/webhooks/register", post(register_webhook))
         .route("/webhooks/{id}", delete(delete_webhook))
+        .route("/admin/anchor/qr", get(admin_anchor_qr))
+        .route("/admin/anchor/record", post(admin_anchor_record))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -1703,4 +1705,114 @@ async fn memo_decode_endpoint(
     };
 
     Ok(Json(result))
+}
+
+async fn admin_anchor_qr(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
+
+    let root = state
+        .db
+        .current_merkle_root()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let unanchored = state
+        .db
+        .unanchored_leaf_count()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let root = root.ok_or((StatusCode::BAD_REQUEST, "no Merkle root yet".into()))?;
+    let addr = state
+        .config
+        .anchor_to_address
+        .as_deref()
+        .ok_or((StatusCode::BAD_REQUEST, "ANCHOR_TO_ADDRESS not configured".into()))?;
+
+    let memo_text = format!("ZAP1:09:{}", root.root_hash);
+    let memo_hex = hex::encode(memo_text.as_bytes());
+    let uri = format!("zcash:{}?amount=0.0001&memo={}", addr, memo_hex);
+    let qr_svg = generate_qr_svg(&uri);
+
+    let status = if root.anchor_txid.is_some() && unanchored == 0 {
+        "up to date"
+    } else {
+        "needs anchor"
+    };
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anchor QR</title>
+<style>
+body {{ background:#0a0e17; color:#e2e4e8; font-family:monospace; display:flex; flex-direction:column; align-items:center; padding:40px 20px; }}
+.qr {{ background:#fff; padding:16px; border-radius:8px; margin:24px 0; }}
+.info {{ font-size:12px; color:#888; max-width:500px; word-break:break-all; text-align:center; line-height:1.6; }}
+.status {{ font-size:14px; color:{}; margin-bottom:16px; }}
+h1 {{ font-size:18px; margin-bottom:8px; }}
+.memo {{ background:#1a1e27; padding:12px; border-radius:4px; font-size:11px; margin:16px 0; word-break:break-all; }}
+form {{ margin-top:24px; display:flex; flex-direction:column; gap:8px; }}
+input {{ background:#1a1e27; border:1px solid #333; color:#e2e4e8; padding:8px; border-radius:4px; font-family:monospace; font-size:12px; }}
+button {{ background:#d4a843; color:#0a0e17; border:none; padding:10px 20px; border-radius:4px; font-weight:bold; cursor:pointer; }}
+</style></head><body>
+<h1>Anchor #{}</h1>
+<div class="status">{}</div>
+<div class="qr">{}</div>
+<div class="info">
+  <div>Root: {}</div>
+  <div>Leaves: {} ({} unanchored)</div>
+  <div class="memo">Memo: {}</div>
+  <div>Scan with Zodl. Send 0.0001 ZEC.</div>
+</div>
+<form method="POST" action="/admin/anchor/record">
+  <input type="hidden" name="root" value="{}">
+  <input name="txid" placeholder="txid after send" required>
+  <input name="height" type="number" placeholder="block height" required>
+  <button type="submit">Record Anchor</button>
+</form>
+</body></html>"#,
+        if status == "up to date" { "#4caf50" } else { "#d4a843" },
+        root.leaf_count / 4 + 1,
+        status,
+        qr_svg,
+        root.root_hash,
+        root.leaf_count,
+        unanchored,
+        html_escape(&memo_text),
+        root.root_hash,
+    );
+
+    Ok(Html(html))
+}
+
+#[derive(Deserialize)]
+struct AnchorRecordForm {
+    root: String,
+    txid: String,
+    height: u32,
+}
+
+async fn admin_anchor_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Form(form): axum::extract::Form<AnchorRecordForm>,
+) -> Result<Html<String>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
+
+    state
+        .db
+        .record_merkle_anchor(&form.root, &form.txid, Some(form.height))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Html(format!(
+        r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/admin/anchor/qr">
+<style>body {{ background:#0a0e17; color:#4caf50; font-family:monospace; display:flex; justify-content:center; align-items:center; height:100vh; }}</style>
+</head><body>
+<div>Anchor recorded. Root: {}...  Txid: {}...  Height: {}. Redirecting...</div>
+</body></html>"#,
+        &form.root[..16],
+        &form.txid[..16],
+        form.height,
+    )))
 }

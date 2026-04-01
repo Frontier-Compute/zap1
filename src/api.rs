@@ -1518,6 +1518,9 @@ async fn stats(
         (10, "STAKING_DEPOSIT"),
         (11, "STAKING_WITHDRAW"),
         (12, "STAKING_REWARD"),
+        (13, "GOVERNANCE_PROPOSAL"),
+        (14, "GOVERNANCE_VOTE"),
+        (15, "GOVERNANCE_RESULT"),
     ];
     let db_counts = state.db.leaf_counts_by_type().unwrap_or_default();
     let mut type_counts = serde_json::Map::new();

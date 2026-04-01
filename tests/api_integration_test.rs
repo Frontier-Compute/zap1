@@ -42,8 +42,8 @@ async fn protocol_info_returns_zap1() {
     let body = axum::body::to_bytes(resp.into_body(), 10000).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["protocol"], "ZAP1");
-    assert_eq!(json["version"], "3.0.0-draft");
-    assert_eq!(json["deployed_types"], 15);
+    assert_eq!(json["version"], "3.0.0");
+    assert_eq!(json["deployed_types"], 12);
 }
 
 #[tokio::test]

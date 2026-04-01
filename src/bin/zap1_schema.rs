@@ -32,6 +32,13 @@ struct EventWitness {
     old_wallet_hash: Option<String>,
     new_wallet_hash: Option<String>,
     merkle_root: Option<String>,
+    amount_zat: Option<u64>,
+    validator_id: Option<String>,
+    epoch: Option<u32>,
+    proposal_id: Option<String>,
+    proposal_hash: Option<String>,
+    vote_commitment: Option<String>,
+    result_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -285,6 +292,115 @@ fn validate_event(event: &EventWitness) -> Result<ValidationResult> {
             let mut hash = [0u8; 32];
             hash.copy_from_slice(&root_bytes);
             hash
+        }
+        "STAKING_DEPOSIT" | "STAKING_WITHDRAW" => {
+            let wh = event
+                .wallet_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("{} requires wallet_hash", event.event_type))?;
+            let amt = event
+                .amount_zat
+                .ok_or_else(|| anyhow!("{} requires amount_zat", event.event_type))?;
+            let vid = event
+                .validator_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("{} requires validator_id", event.event_type))?;
+            let type_byte = if event.event_type == "STAKING_DEPOSIT" {
+                0x0A
+            } else {
+                0x0B
+            };
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(wh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(wh.as_bytes());
+            payload.extend_from_slice(&amt.to_be_bytes());
+            payload.extend_from_slice(&(vid.len() as u16).to_be_bytes());
+            payload.extend_from_slice(vid.as_bytes());
+            hash_payload(type_byte, &payload)
+        }
+        "STAKING_REWARD" => {
+            let wh = event
+                .wallet_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("STAKING_REWARD requires wallet_hash"))?;
+            let amt = event
+                .amount_zat
+                .ok_or_else(|| anyhow!("STAKING_REWARD requires amount_zat"))?;
+            let ep = event
+                .epoch
+                .ok_or_else(|| anyhow!("STAKING_REWARD requires epoch"))?;
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(wh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(wh.as_bytes());
+            payload.extend_from_slice(&amt.to_be_bytes());
+            payload.extend_from_slice(&ep.to_be_bytes());
+            hash_payload(0x0C, &payload)
+        }
+        "GOVERNANCE_PROPOSAL" => {
+            let wh = event
+                .wallet_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires wallet_hash"))?;
+            let pid = event
+                .proposal_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires proposal_id"))?;
+            let ph = event
+                .proposal_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires proposal_hash"))?;
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(wh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(wh.as_bytes());
+            payload.extend_from_slice(&(pid.len() as u16).to_be_bytes());
+            payload.extend_from_slice(pid.as_bytes());
+            payload.extend_from_slice(&(ph.len() as u16).to_be_bytes());
+            payload.extend_from_slice(ph.as_bytes());
+            hash_payload(0x0D, &payload)
+        }
+        "GOVERNANCE_VOTE" => {
+            let wh = event
+                .wallet_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires wallet_hash"))?;
+            let pid = event
+                .proposal_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires proposal_id"))?;
+            let vc = event
+                .vote_commitment
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires vote_commitment"))?;
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(wh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(wh.as_bytes());
+            payload.extend_from_slice(&(pid.len() as u16).to_be_bytes());
+            payload.extend_from_slice(pid.as_bytes());
+            payload.extend_from_slice(&(vc.len() as u16).to_be_bytes());
+            payload.extend_from_slice(vc.as_bytes());
+            hash_payload(0x0E, &payload)
+        }
+        "GOVERNANCE_RESULT" => {
+            let wh = event
+                .wallet_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires wallet_hash"))?;
+            let pid = event
+                .proposal_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires proposal_id"))?;
+            let rh = event
+                .result_hash
+                .as_ref()
+                .ok_or_else(|| anyhow!("requires result_hash"))?;
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(wh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(wh.as_bytes());
+            payload.extend_from_slice(&(pid.len() as u16).to_be_bytes());
+            payload.extend_from_slice(pid.as_bytes());
+            payload.extend_from_slice(&(rh.len() as u16).to_be_bytes());
+            payload.extend_from_slice(rh.as_bytes());
+            hash_payload(0x0F, &payload)
         }
         other => return Err(anyhow!("unknown event type: {other}")),
     };

@@ -50,6 +50,36 @@
       },
       "note": "raw 32-byte root, no hash wrapping",
       "expected_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+    },
+    {
+      "event_type": "STAKING_DEPOSIT",
+      "type_byte": "0x0A",
+      "input_fields": {
+        "wallet_hash": "crosslink_validator_001",
+        "amount_zat": 1000000000,
+        "validator_id": "validator-london-01"
+      },
+      "expected_hash": "94473f27ed59a1cca8353a5e26127dd61b3f23c67320c5f1c458e3dbc0d61803"
+    },
+    {
+      "event_type": "STAKING_REWARD",
+      "type_byte": "0x0C",
+      "input_fields": {
+        "wallet_hash": "crosslink_validator_001",
+        "amount_zat": 312500,
+        "epoch": 1
+      },
+      "expected_hash": "22371dd6f20d531631e331dc6ff27cd633e6eee9c92b3df1418da53885aaec43"
+    },
+    {
+      "event_type": "GOVERNANCE_PROPOSAL",
+      "type_byte": "0x0D",
+      "input_fields": {
+        "wallet_hash": "dao_operator_001",
+        "proposal_id": "ZIP-302-adoption",
+        "proposal_hash": "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd"
+      },
+      "expected_hash": "0d3fba70347f3b9a76ce0f997296d7f34c5a83ca3a1a3d8d32233d3efe9a50b8"
     }
   ],
   "merkle_tree_vectors": [

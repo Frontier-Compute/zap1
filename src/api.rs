@@ -951,6 +951,9 @@ async fn recent_events(
                     "TRANSFER" => "Ownership transferred",
                     "EXIT" => "Hardware decommissioned",
                     "MERKLE_ROOT" => "Merkle root anchor",
+                    "STAKING_DEPOSIT" => "Staking deposit",
+                    "STAKING_WITHDRAW" => "Staking withdrawal",
+                    "STAKING_REWARD" => "Staking reward",
                     _ => "Unknown event",
                 },
                 "wallet_hash": l.wallet_hash,
@@ -1252,6 +1255,9 @@ struct CreateEventRequest {
     month: Option<u32>,
     year: Option<u32>,
     new_wallet_hash: Option<String>,
+    amount_zat: Option<u64>,
+    validator_id: Option<String>,
+    epoch: Option<u32>,
 }
 
 async fn create_lifecycle_event(
@@ -1310,8 +1316,29 @@ async fn create_lifecycle_event(
                 .ok_or((StatusCode::BAD_REQUEST, "serial_number required".into()))?;
             state.db.insert_exit_leaf(&req.wallet_hash, serial, now_ts)
         }
+        "STAKING_DEPOSIT" => {
+            let amount = req.amount_zat
+                .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            let validator = req.validator_id.as_deref()
+                .ok_or((StatusCode::BAD_REQUEST, "validator_id required".into()))?;
+            state.db.insert_staking_deposit_leaf(&req.wallet_hash, amount, validator)
+        }
+        "STAKING_WITHDRAW" => {
+            let amount = req.amount_zat
+                .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            let validator = req.validator_id.as_deref()
+                .ok_or((StatusCode::BAD_REQUEST, "validator_id required".into()))?;
+            state.db.insert_staking_withdraw_leaf(&req.wallet_hash, amount, validator)
+        }
+        "STAKING_REWARD" => {
+            let amount = req.amount_zat
+                .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            let epoch = req.epoch
+                .ok_or((StatusCode::BAD_REQUEST, "epoch required".into()))?;
+            state.db.insert_staking_reward_leaf(&req.wallet_hash, amount, epoch)
+        }
         other => {
-            return Err((StatusCode::BAD_REQUEST, format!("unsupported event_type: {other}. Use: CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT")));
+            return Err((StatusCode::BAD_REQUEST, format!("unsupported event_type: {other}. Use: CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT, STAKING_DEPOSIT, STAKING_WITHDRAW, STAKING_REWARD")));
         }
     }.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 

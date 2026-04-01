@@ -4,7 +4,8 @@ use std::sync::Mutex;
 
 use crate::memo::{
     hash_contract_anchor, hash_deployment, hash_exit, hash_hosting_payment, hash_ownership_attest,
-    hash_program_entry, hash_shield_renewal, hash_transfer, MemoType,
+    hash_program_entry, hash_shield_renewal, hash_staking_deposit, hash_staking_reward,
+    hash_staking_withdraw, hash_transfer, MemoType,
 };
 use crate::merkle::{
     compute_root, decode_hash, generate_proof, MerkleLeafRecord, MerkleRootRecord,
@@ -523,6 +524,46 @@ impl Db {
     ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
         let leaf_hash = hex::encode(hash_exit(wallet_hash, serial_number, timestamp));
         self.insert_leaf_raw(MemoType::Exit, &leaf_hash, wallet_hash, Some(serial_number))
+    }
+
+    pub fn insert_staking_deposit_leaf(
+        &self,
+        wallet_hash: &str,
+        amount_zat: u64,
+        validator_id: &str,
+    ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
+        let leaf_hash = hex::encode(hash_staking_deposit(wallet_hash, amount_zat, validator_id));
+        self.insert_leaf_raw(
+            MemoType::StakingDeposit,
+            &leaf_hash,
+            wallet_hash,
+            Some(validator_id),
+        )
+    }
+
+    pub fn insert_staking_withdraw_leaf(
+        &self,
+        wallet_hash: &str,
+        amount_zat: u64,
+        validator_id: &str,
+    ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
+        let leaf_hash = hex::encode(hash_staking_withdraw(wallet_hash, amount_zat, validator_id));
+        self.insert_leaf_raw(
+            MemoType::StakingWithdraw,
+            &leaf_hash,
+            wallet_hash,
+            Some(validator_id),
+        )
+    }
+
+    pub fn insert_staking_reward_leaf(
+        &self,
+        wallet_hash: &str,
+        amount_zat: u64,
+        epoch: u32,
+    ) -> Result<(MerkleLeafRecord, MerkleRootRecord)> {
+        let leaf_hash = hex::encode(hash_staking_reward(wallet_hash, amount_zat, epoch));
+        self.insert_leaf_raw(MemoType::StakingReward, &leaf_hash, wallet_hash, None)
     }
 
     /// Get all Merkle leaves for a wallet hash (lifecycle timeline).

@@ -210,6 +210,35 @@ pub fn hash_exit(wallet_hash: &str, serial_number: &str, timestamp: u64) -> [u8;
     hash_payload(MemoType::Exit, &payload)
 }
 
+pub fn hash_staking_deposit(wallet_hash: &str, amount_zat: u64, validator_id: &str) -> [u8; 32] {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(wallet_hash.as_bytes());
+    payload.extend_from_slice(&amount_zat.to_be_bytes());
+    payload.extend_from_slice(&(validator_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(validator_id.as_bytes());
+    hash_payload(MemoType::StakingDeposit, &payload)
+}
+
+pub fn hash_staking_withdraw(wallet_hash: &str, amount_zat: u64, validator_id: &str) -> [u8; 32] {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(wallet_hash.as_bytes());
+    payload.extend_from_slice(&amount_zat.to_be_bytes());
+    payload.extend_from_slice(&(validator_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(validator_id.as_bytes());
+    hash_payload(MemoType::StakingWithdraw, &payload)
+}
+
+pub fn hash_staking_reward(wallet_hash: &str, amount_zat: u64, epoch: u32) -> [u8; 32] {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(wallet_hash.as_bytes());
+    payload.extend_from_slice(&amount_zat.to_be_bytes());
+    payload.extend_from_slice(&epoch.to_be_bytes());
+    hash_payload(MemoType::StakingReward, &payload)
+}
+
 pub fn merkle_root_memo(root_hash: &[u8; 32]) -> StructuredMemo {
     StructuredMemo {
         memo_type: MemoType::MerkleRoot,

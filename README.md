@@ -4,7 +4,7 @@
 
 Open-source attestation protocol for Zcash. Commits typed lifecycle events to a BLAKE2b Merkle tree and anchors roots on-chain via shielded memos. Any Zcash-native operator can use it.
 
-4 mainnet anchors. 16 leaves. 102 tests. 57 automated checks. 9 binaries. MIT licensed.
+4 mainnet anchors. 15 event types. 102 tests. 57 automated checks. MIT licensed. Live stats: https://pay.frontiercompute.io/stats
 
 [ZIP draft PR #1243](https://github.com/zcash/zips/pull/1243) | [QUICKSTART](QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
 

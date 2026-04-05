@@ -58,7 +58,7 @@ Transaction types:
 | `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be)` | Reserved for Crosslink |
 | `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || epoch_be || reward_zat_be)` | Reserved for Crosslink |
 
-The protocol now defines twelve event types: nine deployed in production and three reserved for Crosslink staking.
+The protocol defines 21 event types across 7 families.
 
 ## 3. Hash Construction
 
@@ -218,7 +218,7 @@ For Wyoming filing purposes, the protocol is the DAO's audit and commitment laye
 
 ## 11. API Reference
 
-The deployed API exposes event insertion, lifecycle lookup, and operational stats. The protocol now defines twelve event types (nine deployed, three reserved for Crosslink staking). This section documents the protocol-level contract for those endpoints.
+The deployed API exposes event insertion,  lifecycle lookup,  and operational stats.  21 event types across 7 families.  This section documents the protocol-level contract for those endpoints.
 
 ### `POST /event`
 

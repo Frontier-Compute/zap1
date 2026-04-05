@@ -5,7 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 fn check_api_key(config: &Config, headers: &HeaderMap) -> Result<(), (StatusCode, String)> {
     if let Some(expected) = &config.api_key {
@@ -100,9 +100,15 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/anchor/record", post(admin_anchor_record))
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
+                .allow_origin([
+                    "https://frontiercompute.cash".parse().unwrap(),
+                    "https://frontiercompute.io".parse().unwrap(),
+                    "https://verify.frontiercompute.cash".parse().unwrap(),
+                    "https://nordicshield.cash".parse().unwrap(),
+                    "https://pay.frontiercompute.io".parse().unwrap(),
+                ])
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::OPTIONS])
+                .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE]),
         )
         .with_state(state)
 }
@@ -324,8 +330,10 @@ pub struct ListQuery {
 
 async fn list_invoices(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<Invoice>>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let invoices = state
         .db
         .list_invoices(query.status.as_deref())
@@ -1288,6 +1296,14 @@ async fn create_lifecycle_event(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     check_api_key(&state.config, &headers)?;
 
+    // Validate wallet_hash: 1-128 chars, alphanumeric + underscore + hyphen
+    if req.wallet_hash.is_empty() || req.wallet_hash.len() > 128 {
+        return Err((StatusCode::BAD_REQUEST, "wallet_hash must be 1-128 characters".to_string()));
+    }
+    if !req.wallet_hash.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err((StatusCode::BAD_REQUEST, "wallet_hash must be alphanumeric, underscore, or hyphen".to_string()));
+    }
+
     let now_ts = chrono::Utc::now().timestamp() as u64;
 
     let (leaf, root) = match req.event_type.as_str() {
@@ -1902,6 +1918,9 @@ async fn memo_decode_endpoint(
     body: String,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let hex_str = body.trim();
+    if hex_str.len() > 2048 {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Memo hex limited to 1024 bytes (2048 hex chars)".to_string()));
+    }
     let bytes =
         hex::decode(hex_str).map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid hex: {e}")))?;
 

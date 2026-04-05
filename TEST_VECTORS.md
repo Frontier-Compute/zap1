@@ -51,7 +51,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "input_fields": {
         "wallet_hash": "wallet_abc"
       },
-      "expected_leaf_hash": "344a05bf81faf6e2d54a0e52ea0267aff0244998eb1ee27adf5627413e92f089",
+      "expected_hash": "344a05bf81faf6e2d54a0e52ea0267aff0244998eb1ee27adf5627413e92f089",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x01 || wallet_hash)"
     },
@@ -62,7 +62,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "wallet_hash": "wallet_abc",
         "serial_number": "Z15P-2026-001"
       },
-      "expected_leaf_hash": "5d77b9a3435948a98099267e510a14663cc0fa80afd2a3ee5fb4363f6ecdfa13",
+      "expected_hash": "5d77b9a3435948a98099267e510a14663cc0fa80afd2a3ee5fb4363f6ecdfa13",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x02 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number)"
     },
@@ -73,7 +73,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "serial_number": "Z15P-2026-001",
         "contract_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
-      "expected_leaf_hash": "ae15a6e4afceee1d6339690204f55d4c1336339ee4736147b3a0760d45c2bf04",
+      "expected_hash": "ae15a6e4afceee1d6339690204f55d4c1336339ee4736147b3a0760d45c2bf04",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x03 || len(serial_number) || serial_number || len(contract_sha256) || contract_sha256)"
     },
@@ -85,7 +85,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "facility_id": "hamus-mo-i-rana",
         "timestamp": 1711843200
       },
-      "expected_leaf_hash": "f265b9a06a61b2b8c6eeed7fc00c7aa686ad511053467815bf1f1037d460e1f1",
+      "expected_hash": "f265b9a06a61b2b8c6eeed7fc00c7aa686ad511053467815bf1f1037d460e1f1",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x04 || len(serial_number) || serial_number || len(facility_id) || facility_id || timestamp_be)"
     },
@@ -97,7 +97,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "month": 7,
         "year": 2026
       },
-      "expected_leaf_hash": "6fe67554ae4108215a05d2e6f0e24c15fd7d5846ebd653618eff498f1be41a4f",
+      "expected_hash": "6fe67554ae4108215a05d2e6f0e24c15fd7d5846ebd653618eff498f1be41a4f",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x05 || len(serial_number) || serial_number || month_be || year_be)"
     },
@@ -108,7 +108,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "wallet_hash": "wallet_abc",
         "year": 2027
       },
-      "expected_leaf_hash": "9f49ece77e800ac211f84f1695bea91bc4c93d228ddbce57901b179ea12e9e26",
+      "expected_hash": "9f49ece77e800ac211f84f1695bea91bc4c93d228ddbce57901b179ea12e9e26",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x06 || len(wallet_hash) || wallet_hash || year_be)"
     },
@@ -120,7 +120,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "new_wallet_hash": "wallet_xyz",
         "serial_number": "Z15P-2026-001"
       },
-      "expected_leaf_hash": "abcc3e0af84d0a3f0ebdb0cd22fc61234e6355c4e77e8b6cdabb86f1ee70a1ec",
+      "expected_hash": "abcc3e0af84d0a3f0ebdb0cd22fc61234e6355c4e77e8b6cdabb86f1ee70a1ec",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x07 || len(old_wallet_hash) || old_wallet_hash || len(new_wallet_hash) || new_wallet_hash || len(serial_number) || serial_number)"
     },
@@ -132,7 +132,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "serial_number": "Z15P-2026-001",
         "timestamp": 1714521600
       },
-      "expected_leaf_hash": "4e024461b940fb02a31722f60d2a17b667c9caf86e1d4f4e751123c20c6bcaf5",
+      "expected_hash": "4e024461b940fb02a31722f60d2a17b667c9caf86e1d4f4e751123c20c6bcaf5",
       "hash_function_used": "BLAKE2b-256 with NordicShield_ personalization",
       "construction_rule": "BLAKE2b_32(0x08 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number || timestamp_be)"
     },
@@ -142,7 +142,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "input_fields": {
         "root_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
       },
-      "expected_leaf_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "expected_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
       "hash_function_used": "raw 32-byte Merkle root payload (no additional BLAKE2b leaf hashing for type 0x09)",
       "construction_rule": "MERKLE_ROOT = current_root"
     },
@@ -186,7 +186,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "input_fields": {
         "wallet_hash": "e2e_wallet_20260327"
       },
-      "expected_leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "expected_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
       "source": "conformance/hash_vectors.json, tests/memo_merkle_test.rs (mainnet_program_entry_e2e_wallet)"
     },
     {
@@ -196,7 +196,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "input_fields": {
         "wallet_hash": "test_wallet_abc"
       },
-      "expected_leaf_hash": "771fd5dbf5245e22a43218e4312f9a6e9b020a03a1617e70ee91d10914e82507",
+      "expected_hash": "771fd5dbf5245e22a43218e4312f9a6e9b020a03a1617e70ee91d10914e82507",
       "source": "conformance/hash_vectors.json"
     },
     {
@@ -207,7 +207,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "wallet_hash": "e2e_wallet_20260327",
         "serial_number": "Z15P-E2E-001"
       },
-      "expected_leaf_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+      "expected_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
       "source": "conformance/hash_vectors.json"
     },
     {
@@ -219,7 +219,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "month": 3,
         "year": 2026
       },
-      "expected_leaf_hash": "dac74f263c985f808aa398d05500f4b6515875fa627cd0c85d5a82ea8b383367",
+      "expected_hash": "dac74f263c985f808aa398d05500f4b6515875fa627cd0c85d5a82ea8b383367",
       "source": "conformance/hash_vectors.json"
     }
   ],

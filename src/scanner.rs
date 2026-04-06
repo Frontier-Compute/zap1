@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::models::InvoiceStatus;
 use crate::node::NodeBackend;
+use crate::wallet::AnchorWallet;
 
 /// The main scanning loop. Polls the node backend for new blocks and attempts
 /// trial decryption of every transaction using the UFVK to detect incoming
@@ -24,6 +25,7 @@ pub async fn scan_loop(
     db: Arc<Db>,
     ufvk: Arc<UnifiedFullViewingKey>,
     backend: Arc<dyn NodeBackend>,
+    wallet: Option<Arc<AnchorWallet>>,
 ) {
     // Build the UFVK map for decrypt_transaction
     let mut ufvks: HashMap<u32, UnifiedFullViewingKey> = HashMap::new();
@@ -32,7 +34,7 @@ pub async fn scan_loop(
     tracing::info!("Scanner starting");
 
     loop {
-        if let Err(e) = scan_once(&*backend, &config, &db, &ufvks).await {
+        if let Err(e) = scan_once(&*backend, &config, &db, &ufvks, wallet.as_deref()).await {
             tracing::warn!("Scan error: {:#}", e);
         }
 
@@ -54,6 +56,7 @@ async fn scan_once(
     config: &Config,
     db: &Db,
     ufvks: &HashMap<u32, UnifiedFullViewingKey>,
+    wallet: Option<&AnchorWallet>,
 ) -> Result<()> {
     let chain_height = backend.get_chain_height().await?;
 
@@ -95,6 +98,7 @@ async fn scan_once(
 
     for height in start..=end {
         let txids = backend.get_block_txids(height).await?;
+        let mut block_raw_txs: Vec<(String, Vec<u8>)> = Vec::new();
 
         for txid_str in &txids {
             let raw = match backend.get_raw_transaction(txid_str).await {
@@ -104,6 +108,7 @@ async fn scan_once(
                     continue;
                 }
             };
+            block_raw_txs.push((txid_str.clone(), raw.clone()));
 
             // Determine branch ID for this height
             let block_height = BlockHeight::from_u32(height);
@@ -206,7 +211,28 @@ async fn scan_once(
             }
         }
 
+        // Feed block transactions to anchor wallet for commitment tree + note detection
+        if let Some(w) = wallet {
+            if !block_raw_txs.is_empty() {
+                if let Err(e) = w.process_block_commitments(height, &block_raw_txs, &config.network) {
+                    tracing::debug!("Wallet block {} processing: {}", height, e);
+                }
+            }
+        }
+
         db.set_last_scanned_height(height)?;
+    }
+
+    // Mark wallet recovery complete after catching up to chain tip
+    if let Some(w) = wallet {
+        if !w.recovery_done() {
+            w.mark_recovery_done();
+            tracing::info!(
+                "Wallet recovery complete: balance {} zat,  {} notes",
+                w.balance(),
+                w.unspent_count()
+            );
+        }
     }
 
     Ok(())

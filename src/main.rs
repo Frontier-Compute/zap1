@@ -44,16 +44,7 @@ async fn main() -> Result<()> {
     // Create node backend (Zaino gRPC if ZAINO_GRPC_URL is set, otherwise Zebra RPC)
     let backend: Arc<dyn node::NodeBackend> = Arc::from(node::create_backend(&config));
 
-    // Spawn scanner
-    let scanner_config = config.clone();
-    let scanner_db = db.clone();
-    let scanner_ufvk = ufvk.clone();
-    let scanner_backend = backend.clone();
-    tokio::spawn(async move {
-        scanner::scan_loop(scanner_config, scanner_db, scanner_ufvk, scanner_backend).await;
-    });
-
-    // Initialize embedded anchor wallet if ANCHOR_SEED is set
+    // Initialize embedded anchor wallet if ANCHOR_SEED is set (before scanner so scanner can feed it)
     let anchor_wallet = if let Some(ref seed) = config.anchor_seed {
         match wallet::AnchorWallet::new(&config.network, seed) {
             Ok(w) => {
@@ -79,6 +70,16 @@ async fn main() -> Result<()> {
         tracing::info!("No ANCHOR_SEED,  embedded wallet disabled");
         None
     };
+
+    // Spawn scanner (after wallet init so it can feed commitments)
+    let scanner_config = config.clone();
+    let scanner_db = db.clone();
+    let scanner_ufvk = ufvk.clone();
+    let scanner_backend = backend.clone();
+    let scanner_wallet = anchor_wallet.clone();
+    tokio::spawn(async move {
+        scanner::scan_loop(scanner_config, scanner_db, scanner_ufvk, scanner_backend, scanner_wallet).await;
+    });
 
     // Spawn anchor automation
     let anchor_config = config.clone();

@@ -107,8 +107,15 @@ pub fn router(state: AppState) -> Router {
                     "https://nordicshield.cash".parse().unwrap(),
                     "https://pay.frontiercompute.io".parse().unwrap(),
                 ])
-                .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::OPTIONS])
-                .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE]),
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::header::CONTENT_TYPE,
+                ]),
         )
         .with_state(state)
 }
@@ -1298,10 +1305,20 @@ async fn create_lifecycle_event(
 
     // Validate wallet_hash: 1-128 chars, alphanumeric + underscore + hyphen
     if req.wallet_hash.is_empty() || req.wallet_hash.len() > 128 {
-        return Err((StatusCode::BAD_REQUEST, "wallet_hash must be 1-128 characters".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "wallet_hash must be 1-128 characters".to_string(),
+        ));
     }
-    if !req.wallet_hash.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-        return Err((StatusCode::BAD_REQUEST, "wallet_hash must be alphanumeric, underscore, or hyphen".to_string()));
+    if !req
+        .wallet_hash
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "wallet_hash must be alphanumeric, underscore, or hyphen".to_string(),
+        ));
     }
 
     let now_ts = chrono::Utc::now().timestamp() as u64;
@@ -1919,7 +1936,10 @@ async fn memo_decode_endpoint(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let hex_str = body.trim();
     if hex_str.len() > 2048 {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Memo hex limited to 1024 bytes (2048 hex chars)".to_string()));
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Memo hex limited to 1024 bytes (2048 hex chars)".to_string(),
+        ));
     }
     let bytes =
         hex::decode(hex_str).map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid hex: {e}")))?;

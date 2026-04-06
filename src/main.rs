@@ -75,7 +75,9 @@ async fn main() -> Result<()> {
                 &*recovery_backend,
                 &recovery_config,
                 &recovery_wallet,
-            ).await {
+            )
+            .await
+            {
                 tracing::error!("Wallet recovery scan failed: {:#}", e);
             }
         });
@@ -88,7 +90,14 @@ async fn main() -> Result<()> {
     let scanner_backend = backend.clone();
     let scanner_wallet = anchor_wallet.clone();
     tokio::spawn(async move {
-        scanner::scan_loop(scanner_config, scanner_db, scanner_ufvk, scanner_backend, scanner_wallet).await;
+        scanner::scan_loop(
+            scanner_config,
+            scanner_db,
+            scanner_ufvk,
+            scanner_backend,
+            scanner_wallet,
+        )
+        .await;
     });
 
     // Spawn anchor automation

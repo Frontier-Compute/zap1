@@ -214,7 +214,8 @@ async fn scan_once(
         // Feed block transactions to anchor wallet for commitment tree + note detection
         if let Some(w) = wallet {
             if !block_raw_txs.is_empty() {
-                if let Err(e) = w.process_block_commitments(height, &block_raw_txs, &config.network) {
+                if let Err(e) = w.process_block_commitments(height, &block_raw_txs, &config.network)
+                {
                     tracing::debug!("Wallet block {} processing: {}", height, e);
                 }
             }
@@ -264,7 +265,9 @@ pub async fn wallet_recovery_scan(
             reseed_height,
             config.scan_from_height
         );
-        wallet.init_from_zebra(&config.zebra_rpc_url, reseed_height + 1).await?;
+        wallet
+            .init_from_zebra(&config.zebra_rpc_url, reseed_height + 1)
+            .await?;
     }
 
     let start = if reseed_height > config.scan_from_height {
@@ -306,7 +309,9 @@ pub async fn wallet_recovery_scan(
             }
 
             if !block_raw_txs.is_empty() {
-                if let Err(e) = wallet.process_block_commitments(height, &block_raw_txs, &config.network) {
+                if let Err(e) =
+                    wallet.process_block_commitments(height, &block_raw_txs, &config.network)
+                {
                     tracing::debug!("Wallet recovery block {}: {}", height, e);
                 }
             }

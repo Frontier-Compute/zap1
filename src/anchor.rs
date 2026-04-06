@@ -230,7 +230,7 @@ async fn run_anchor(config: &Config, db: &Db, wallet: Option<&AnchorWallet>) -> 
 
         let height = get_chain_height(&config.zebra_rpc_url).await?;
         let params = zcash_protocol::consensus::MainNetwork;
-        let (txid, raw_hex, spent_pos) = w.build_anchor_tx(&params, config, db, height)?;
+        let (raw_hex, txid, spent_pos) = w.build_anchor_tx(&params, config, db, height)?;
 
         // Broadcast via Zebra sendrawtransaction
         let resp = reqwest::Client::new()

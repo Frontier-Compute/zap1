@@ -49,16 +49,8 @@ async fn main() -> Result<()> {
         match wallet::AnchorWallet::new(&config.network, seed) {
             Ok(w) => {
                 let w = Arc::new(w);
-                let wc = w.clone();
-                let url = config.zebra_rpc_url.clone();
-                let height = config.scan_from_height;
-                tokio::spawn(async move {
-                    if let Err(e) = wc.init_from_zebra(&url, height).await {
-                        tracing::error!("Anchor wallet init failed: {:#}", e);
-                    } else {
-                        tracing::info!("Anchor wallet: balance {} zat", wc.balance());
-                    }
-                });
+                // Don't seed tree here.  Recovery scan seeds at a recent height
+                // to avoid 14K+ block commitment divergence.
                 Some(w)
             }
             Err(e) => {

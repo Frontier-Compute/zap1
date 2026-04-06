@@ -253,7 +253,25 @@ pub async fn wallet_recovery_scan(
     }
 
     let chain_height = backend.get_chain_height().await?;
-    let start = config.scan_from_height;
+
+    // Re-seed the tree at a recent height to avoid 14K+ block divergence.
+    // The wallet only needs notes received recently.  Seeding near the tip
+    // gives a valid tree root with minimal blocks to process.
+    let reseed_height = chain_height.saturating_sub(1500);
+    if reseed_height > config.scan_from_height {
+        tracing::info!(
+            "Wallet recovery: re-seeding tree at height {} (was {})",
+            reseed_height,
+            config.scan_from_height
+        );
+        wallet.init_from_zebra(&config.zebra_rpc_url, reseed_height + 1).await?;
+    }
+
+    let start = if reseed_height > config.scan_from_height {
+        reseed_height + 1
+    } else {
+        config.scan_from_height
+    };
 
     if start >= chain_height {
         wallet.mark_recovery_done();

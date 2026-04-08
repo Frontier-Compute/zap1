@@ -1030,7 +1030,7 @@ async fn protocol_info() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "protocol": "ZAP1",
         "version": PROTOCOL_VERSION,
-        "event_types": 9,
+        "event_types": 18,
         "deployed_types": 15,
         "reserved_types": 3,
         "hash_function": "BLAKE2b-256",

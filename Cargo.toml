@@ -32,6 +32,10 @@ path = "src/bin/zap1_export.rs"
 name = "keygen"
 path = "src/bin/keygen.rs"
 
+[[bin]]
+name = "shieldvault"
+path = "src/bin/shieldvault.rs"
+
 [dependencies]
 # Zcash
 zcash_client_backend = { version = "0.21", default-features = false, features = ["orchard"] }

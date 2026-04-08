@@ -28,6 +28,15 @@ use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_transparent::builder::TransparentSigningSet;
 
+// PCZT / FROST signing imports
+use blake2b_simd::Hash as Blake2bHash;
+// PcztParts/PcztResult are accessed via TxBuilder::build_for_pczt() return type.
+use zcash_primitives::transaction::sighash::SignableInput;
+use zcash_primitives::transaction::sighash_v5::v5_signature_hash;
+use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::{Authorization, TransactionData, TxDigests, TxVersion};
+use zcash_protocol::value::ZatBalance;
+
 use crate::config::Config;
 use crate::db::Db;
 use crate::frost_signer::{FrostSigner, SigningMode};
@@ -91,6 +100,16 @@ impl sapling_crypto::prover::OutputProver for NoopOutputProver {
     fn encode_proof(proof: Self::Proof) -> sapling_crypto::bundle::GrothProofBytes {
         proof
     }
+}
+
+/// Authorization type for PCZT sighash computation.
+/// Combines EffectsOnly from all shielded protocols.
+struct PcztEffectsOnly;
+
+impl Authorization for PcztEffectsOnly {
+    type TransparentAuth = zcash_transparent::bundle::EffectsOnly;
+    type SaplingAuth = sapling_crypto::bundle::EffectsOnly;
+    type OrchardAuth = orchard::bundle::EffectsOnly;
 }
 
 const MAX_CHECKPOINTS: usize = 100;
@@ -541,14 +560,20 @@ impl AnchorWallet {
         }
 
         // Build, prove, and sign
-        let rng = rand_core::OsRng;
-        let transparent_signing = TransparentSigningSet::new();
         let fee_rule = FeeRule::standard();
 
-        // Both signing modes use the single-key path for now.
-        // FROST threshold signing produces a standalone authorization
-        // signature over the sighash. Full FROST-in-bundle signing
-        // requires the PCZT flow (orchard::pczt) to access alpha.
+        // FROST threshold mode: use PCZT flow to access alpha for
+        // rerandomized spend authorization signatures.
+        if self.signing_mode == SigningMode::FrostThreshold {
+            if let Some(ref frost) = self.frost_signer {
+                return self
+                    .build_anchor_tx_frost(builder, frost, params, config, &fee_rule, position);
+            }
+        }
+
+        // Single-key path: standard build with SpendAuthorizingKey.
+        let rng = rand_core::OsRng;
+        let transparent_signing = TransparentSigningSet::new();
         let sak = SpendAuthorizingKey::from(&self.sk);
         let result = builder
             .build(
@@ -562,24 +587,6 @@ impl AnchorWallet {
             )
             .map_err(|e| anyhow::anyhow!("Transaction build failed: {:?}", e))?;
 
-        // If FROST mode, also produce a threshold signature as proof of
-        // multi-party authorization. This is logged and can be verified
-        // independently against the FROST group public key.
-        if self.signing_mode == SigningMode::FrostThreshold {
-            if let Some(ref frost) = self.frost_signer {
-                let sighash = result.transaction().txid().as_ref().to_vec();
-                match frost.sign_raw(&sighash) {
-                    Ok(sig) => {
-                        let sig_hex = hex::encode(<[u8; 64]>::from(sig));
-                        tracing::info!("FROST threshold signature: {}", &sig_hex[..32],);
-                    }
-                    Err(e) => {
-                        tracing::error!("FROST signing failed: {}", e);
-                    }
-                }
-            }
-        }
-
         let tx = result.transaction();
         let txid = tx.txid().to_string();
 
@@ -591,6 +598,152 @@ impl AnchorWallet {
 
         tracing::info!(
             "Anchor tx built: txid={} ({} zat output)",
+            txid.get(..16).unwrap_or(&txid),
+            config.anchor_amount_zat,
+        );
+
+        Ok((tx_hex, txid, position))
+    }
+
+    /// Build an anchor transaction using FROST threshold signing via the PCZT flow.
+    ///
+    /// PCZT (Partially Created Zcash Transaction) pipeline:
+    ///   1. builder.build_for_pczt() -> PcztParts with orchard::pczt::Bundle
+    ///   2. extract_effects() -> Bundle<EffectsOnly> for sighash computation
+    ///   3. v5_signature_hash() -> shielded sighash
+    ///   4. finalize_io(sighash) -> computes bsk, signs dummy spends
+    ///   5. For each action: read alpha, FROST sign(sighash, alpha), apply_signature()
+    ///   6. create_proof(ProvingKey) -> Orchard halo2 proof
+    ///   7. extract() -> Bundle<Unbound>
+    ///   8. apply_binding_signature(sighash) -> Bundle<Authorized>
+    ///   9. TransactionData::from_parts() + freeze() -> Transaction
+    #[allow(clippy::too_many_arguments)]
+    fn build_anchor_tx_frost<P: Parameters>(
+        &self,
+        builder: TxBuilder<'_, P, ()>,
+        frost: &FrostSigner,
+        params: &P,
+        config: &Config,
+        fee_rule: &FeeRule,
+        position: Position,
+    ) -> Result<(String, String, Position)> {
+        let mut rng = rand_core::OsRng;
+
+        // Step 1: Build PCZT parts (consumes the builder).
+        let pczt_result = builder
+            .build_for_pczt(&mut rng, fee_rule)
+            .map_err(|e| anyhow::anyhow!("PCZT build failed: {:?}", e))?;
+
+        let pczt_parts = pczt_result.pczt_parts;
+        let mut orchard_pczt = pczt_parts
+            .orchard
+            .ok_or_else(|| anyhow::anyhow!("No Orchard bundle in PCZT"))?;
+
+        // Step 2: Compute sighash from transaction effects.
+        let orchard_effects: Option<orchard::Bundle<orchard::bundle::EffectsOnly, ZatBalance>> =
+            orchard_pczt
+                .extract_effects()
+                .map_err(|e| anyhow::anyhow!("extract_effects: {:?}", e))?;
+
+        let tx_version =
+            TxVersion::suggested_for_branch(BranchId::for_height(params, pczt_parts.expiry_height));
+        let consensus_branch_id = BranchId::for_height(params, pczt_parts.expiry_height);
+
+        let tx_data: TransactionData<PcztEffectsOnly> = TransactionData::from_parts(
+            tx_version,
+            consensus_branch_id,
+            0, // lock_time
+            pczt_parts.expiry_height,
+            None, // transparent
+            None, // sprout
+            None, // sapling
+            orchard_effects,
+        );
+
+        let txid_parts: TxDigests<Blake2bHash> = tx_data.digest(TxIdDigester);
+        let shielded_sighash: [u8; 32] =
+            v5_signature_hash(&tx_data, &SignableInput::Shielded, &txid_parts)
+                .as_ref()
+                .try_into()
+                .expect("sighash is 32 bytes");
+
+        tracing::info!("PCZT sighash: {}", &hex::encode(&shielded_sighash)[..16]);
+
+        // Step 3: Finalize IO (computes bsk, signs dummy spends).
+        orchard_pczt
+            .finalize_io(shielded_sighash, &mut rng)
+            .map_err(|e| anyhow::anyhow!("finalize_io: {:?}", e))?;
+
+        // Step 4: FROST sign each non-dummy action.
+        for (i, action) in orchard_pczt.actions_mut().iter_mut().enumerate() {
+            // Skip actions that already have signatures (dummy spends).
+            if action.spend().spend_auth_sig().is_some() {
+                continue;
+            }
+
+            let alpha = *action
+                .spend()
+                .alpha()
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("action {} missing alpha", i))?;
+
+            // FROST sign with rerandomization: sign(sighash, alpha)
+            let frost_sig = frost.sign(&shielded_sighash, alpha)?;
+
+            // Convert reddsa::Signature to orchard's internal Signature type.
+            let sig_bytes: [u8; 64] = frost_sig.into();
+            let orchard_sig = orchard::primitives::redpallas::Signature::<
+                orchard::primitives::redpallas::SpendAuth,
+            >::from(sig_bytes);
+
+            action
+                .apply_signature(shielded_sighash, orchard_sig)
+                .map_err(|e| anyhow::anyhow!("apply_signature action {}: {:?}", i, e))?;
+
+            tracing::info!("FROST signed action {}", i);
+        }
+
+        // Step 5: Create Orchard proof.
+        let proving_key = orchard::circuit::ProvingKey::build();
+        orchard_pczt
+            .create_proof(&proving_key, &mut rng)
+            .map_err(|e| anyhow::anyhow!("create_proof: {:?}", e))?;
+
+        // Step 6: Extract authorized bundle.
+        let unbound_bundle: orchard::Bundle<orchard::pczt::Unbound, ZatBalance> = orchard_pczt
+            .extract()
+            .map_err(|e| anyhow::anyhow!("extract: {:?}", e))?
+            .ok_or_else(|| anyhow::anyhow!("empty orchard bundle after extract"))?;
+
+        let authorized_bundle = unbound_bundle
+            .apply_binding_signature(shielded_sighash, &mut rng)
+            .ok_or_else(|| anyhow::anyhow!("binding signature verification failed"))?;
+
+        // Step 7: Assemble final Transaction.
+        let authorized_tx: TransactionData<zcash_primitives::transaction::Authorized> =
+            TransactionData::from_parts(
+                tx_version,
+                consensus_branch_id,
+                0, // lock_time
+                pczt_parts.expiry_height,
+                None, // transparent
+                None, // sprout
+                None, // sapling
+                Some(authorized_bundle),
+            );
+
+        let tx = authorized_tx
+            .freeze()
+            .map_err(|e| anyhow::anyhow!("freeze: {:?}", e))?;
+
+        let txid = tx.txid().to_string();
+        let mut raw = Vec::new();
+        tx.write(&mut raw)
+            .map_err(|e| anyhow::anyhow!("serialize: {:?}", e))?;
+        let tx_hex = hex::encode(&raw);
+
+        tracing::info!(
+            "FROST anchor tx built: txid={} ({} zat output)",
             txid.get(..16).unwrap_or(&txid),
             config.anchor_amount_zat,
         );

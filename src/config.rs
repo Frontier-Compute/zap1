@@ -123,8 +123,8 @@ impl Config {
             .parse()
             .unwrap_or(24);
 
-        let signing_mode = std::env::var("SIGNING_MODE")
-            .unwrap_or_else(|_| "single_key".to_string());
+        let signing_mode =
+            std::env::var("SIGNING_MODE").unwrap_or_else(|_| "single_key".to_string());
         let frost_share_path_2 = std::env::var("FROST_SHARE_PATH_2").ok();
         let frost_share_path_3 = std::env::var("FROST_SHARE_PATH_3").ok();
 

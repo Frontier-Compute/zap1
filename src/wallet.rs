@@ -29,8 +29,8 @@ use zcash_protocol::value::Zatoshis;
 use zcash_transparent::builder::TransparentSigningSet;
 
 use crate::config::Config;
-use crate::frost_signer::{FrostSigner, SigningMode};
 use crate::db::Db;
+use crate::frost_signer::{FrostSigner, SigningMode};
 use crate::memo::merkle_root_memo;
 use crate::merkle::decode_hash;
 
@@ -571,10 +571,7 @@ impl AnchorWallet {
                 match frost.sign_raw(&sighash) {
                     Ok(sig) => {
                         let sig_hex = hex::encode(<[u8; 64]>::from(sig));
-                        tracing::info!(
-                            "FROST threshold signature: {}",
-                            &sig_hex[..32],
-                        );
+                        tracing::info!("FROST threshold signature: {}", &sig_hex[..32],);
                     }
                     Err(e) => {
                         tracing::error!("FROST signing failed: {}", e);

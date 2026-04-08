@@ -10,8 +10,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use pasta_curves::pallas;
-use reddsa::frost::redpallas::{self, round1, round2, Identifier, PallasBlake2b512};
 use reddsa::frost::redpallas::keys::{KeyPackage, PublicKeyPackage};
+use reddsa::frost::redpallas::{self, round1, round2, Identifier, PallasBlake2b512};
 
 use frost_rerandomized::frost_core::frost;
 use frost_rerandomized::frost_core::{Ciphersuite, Group};
@@ -45,14 +45,12 @@ impl FrostSigner {
         let share_3 = Self::load_share(path_3)?;
 
         // Verify both shares reference the same group key
-        let gvk_2_bytes: [u8; 32] =
-            <<PallasBlake2b512 as Ciphersuite>::Group as Group>::serialize(
-                &share_2.group_public().to_element(),
-            );
-        let gvk_3_bytes: [u8; 32] =
-            <<PallasBlake2b512 as Ciphersuite>::Group as Group>::serialize(
-                &share_3.group_public().to_element(),
-            );
+        let gvk_2_bytes: [u8; 32] = <<PallasBlake2b512 as Ciphersuite>::Group as Group>::serialize(
+            &share_2.group_public().to_element(),
+        );
+        let gvk_3_bytes: [u8; 32] = <<PallasBlake2b512 as Ciphersuite>::Group as Group>::serialize(
+            &share_3.group_public().to_element(),
+        );
         if gvk_2_bytes != gvk_3_bytes {
             anyhow::bail!("FROST shares reference different group keys");
         }
@@ -74,8 +72,7 @@ impl FrostSigner {
     fn load_share(path: &Path) -> Result<KeyPackage> {
         let data = std::fs::read_to_string(path)
             .with_context(|| format!("reading FROST share from {}", path.display()))?;
-        let json: ShareJson =
-            serde_json::from_str(&data).context("parsing FROST share JSON")?;
+        let json: ShareJson = serde_json::from_str(&data).context("parsing FROST share JSON")?;
 
         if json.ciphersuite != "FROST(Pallas, BLAKE2b-512)" {
             anyhow::bail!(
@@ -89,8 +86,8 @@ impl FrostSigner {
             .context("hex-decode identifier")?
             .try_into()
             .map_err(|_| anyhow::anyhow!("identifier must be 32 bytes"))?;
-        let identifier =
-            Identifier::deserialize(&id_bytes).map_err(|e| anyhow::anyhow!("bad identifier: {}", e))?;
+        let identifier = Identifier::deserialize(&id_bytes)
+            .map_err(|e| anyhow::anyhow!("bad identifier: {}", e))?;
 
         // Deserialize signing share
         let ss_bytes: [u8; 32] = hex::decode(&json.signing_share)
@@ -105,8 +102,9 @@ impl FrostSigner {
             .context("hex-decode verifying_share")?
             .try_into()
             .map_err(|_| anyhow::anyhow!("verifying_share must be 32 bytes"))?;
-        let verifying_share = frost::keys::VerifyingShare::<PallasBlake2b512>::deserialize(vs_bytes)
-            .map_err(|e| anyhow::anyhow!("bad verifying_share: {}", e))?;
+        let verifying_share =
+            frost::keys::VerifyingShare::<PallasBlake2b512>::deserialize(vs_bytes)
+                .map_err(|e| anyhow::anyhow!("bad verifying_share: {}", e))?;
 
         // Deserialize group verifying key
         let gvk_bytes: [u8; 32] = hex::decode(&json.group_verifying_key)
@@ -114,8 +112,10 @@ impl FrostSigner {
             .try_into()
             .map_err(|_| anyhow::anyhow!("group_verifying_key must be 32 bytes"))?;
         let group_public =
-            frost_rerandomized::frost_core::VerifyingKey::<PallasBlake2b512>::deserialize(gvk_bytes)
-                .map_err(|e| anyhow::anyhow!("bad group_verifying_key: {}", e))?;
+            frost_rerandomized::frost_core::VerifyingKey::<PallasBlake2b512>::deserialize(
+                gvk_bytes,
+            )
+            .map_err(|e| anyhow::anyhow!("bad group_verifying_key: {}", e))?;
 
         Ok(KeyPackage::new(
             identifier,
@@ -126,7 +126,9 @@ impl FrostSigner {
     }
 
     /// The FROST group verifying key (the group public key on Pallas).
-    pub fn group_verifying_key(&self) -> &frost_rerandomized::frost_core::VerifyingKey<PallasBlake2b512> {
+    pub fn group_verifying_key(
+        &self,
+    ) -> &frost_rerandomized::frost_core::VerifyingKey<PallasBlake2b512> {
         self.pub_key_pkg.group_public()
     }
 
@@ -145,22 +147,18 @@ impl FrostSigner {
         let mut rng = rand::rngs::OsRng;
 
         // Round 1: both signers generate nonces and commitments
-        let (nonces_2, commitments_2) =
-            round1::commit(self.key_pkg_2.secret_share(), &mut rng);
-        let (nonces_3, commitments_3) =
-            round1::commit(self.key_pkg_3.secret_share(), &mut rng);
+        let (nonces_2, commitments_2) = round1::commit(self.key_pkg_2.secret_share(), &mut rng);
+        let (nonces_3, commitments_3) = round1::commit(self.key_pkg_3.secret_share(), &mut rng);
 
         // Build the signing package (commitments + message)
         let mut commitment_map = BTreeMap::new();
         commitment_map.insert(*self.key_pkg_2.identifier(), commitments_2);
         commitment_map.insert(*self.key_pkg_3.identifier(), commitments_3);
 
-        let signing_package =
-            frost::SigningPackage::new(commitment_map, msg);
+        let signing_package = frost::SigningPackage::new(commitment_map, msg);
 
         // Compute the randomizer point for rerandomized FROST
-        let randomized_params =
-            RandomizedParams::from_randomizer(&self.pub_key_pkg, randomizer);
+        let randomized_params = RandomizedParams::from_randomizer(&self.pub_key_pkg, randomizer);
 
         // Round 2: both signers produce signature shares
         let sig_share_2 = round2::sign(

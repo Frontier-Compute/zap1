@@ -125,9 +125,11 @@ def main():
             check("/events[0] has verify_url", "verify_url" in ev)
 
     # /anchor/history
+    has_anchors = False
     data = fetch("/anchor/history")
     if validate_required(data, schemas["/anchor/history"], "/anchor/history"):
         anchors = data.get("anchors", [])
+        has_anchors = len(anchors) > 0
         check("/anchor/history total consistent", data.get("total", -1) == len(anchors))
         if anchors:
             check("/anchor/history[0] has root", len(anchors[0].get("root", "")) >= 64)
@@ -151,7 +153,7 @@ def main():
     except Exception as e:
         check("/memo/decode", False, str(e))
 
-    # /admin/anchor/qr (requires auth, returns HTML)
+    # /admin/anchor/qr (requires auth, returns HTML when anchors exist)
     status, body, ctype = fetch_raw("/admin/anchor/qr")
     check("/admin/anchor/qr rejects without auth", status == 401)
 
@@ -159,9 +161,14 @@ def main():
         "/admin/anchor/qr",
         headers={"Authorization": f"Bearer {API_KEY}"},
     )
-    check("/admin/anchor/qr returns 200 with auth", status == 200)
-    check("/admin/anchor/qr content-type is HTML", "text/html" in ctype)
-    check("/admin/anchor/qr body contains HTML", "<html" in body.lower())
+    if has_anchors:
+        check("/admin/anchor/qr returns 200 with auth", status == 200)
+        check("/admin/anchor/qr content-type is HTML", "text/html" in ctype)
+        check("/admin/anchor/qr body contains HTML", "<html" in body.lower())
+    else:
+        check("/admin/anchor/qr accepted auth", status in (200, 400))
+        if status == 400:
+            print("  skip  /admin/anchor/qr HTML checks  (no anchors yet)")
 
     # /admin/anchor/record (POST-only, requires auth)
     status, _, _ = fetch_raw("/admin/anchor/record")

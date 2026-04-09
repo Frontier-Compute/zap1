@@ -47,7 +47,7 @@ Fifteen event types are defined in ZAP1:
 
 All hashes use BLAKE2b-256 with `NordicShield_` personalization. Merkle nodes use `NordicShield_MRK`. Full spec: [ONCHAIN_PROTOCOL.md](ONCHAIN_PROTOCOL.md).
 
-## First mainnet proof
+## Mainnet proof anchor
 
 Anchored on Zcash mainnet block **3,286,631** on March 27, 2026.
 

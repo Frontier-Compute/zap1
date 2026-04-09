@@ -11,16 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: No stale event type counts
-        run: |
-          # Must not find old counts in docs
-          if grep -rn "\b9 event types\|\bnine event types\|\bnine deployed\|\btwelve event\|\b12 defined\|\b12 event types\|\b9 deployed" \
-            --include="*.md" --include="*.html" --include="*.jsx" \
-            --exclude-dir=node_modules --exclude-dir=target --exclude-dir=dist \
-            --exclude-dir=.git | grep -v "0x09\|Section 9\|type 9\|79 event"; then
-            echo "::error::Found stale event type counts"
-            exit 1
-          fi
+      # Number consistency is enforced by the surface bulletproofer team
+      # against ~/.zeven/sparring/CANONICAL_STATE.md, not by required CI.
+      # A required CI lint that depends on moving mainnet state would turn
+      # unrelated PRs red whenever a new anchor or leaf lands. The bulletproofer
+      # runs every 4 hours, audits all surfaces against canonical, and reports
+      # drift to bulletproof-reports/. Source of truth lives in canonical state,
+      # not in this workflow.
 
       - name: No emdashes
         run: |

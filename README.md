@@ -25,7 +25,7 @@ One production deployment is live on mainnet. The protocol is application-agnost
 
 ## Protocol
 
-Fifteen event types are defined in ZAP1:
+Nine event types are tracked in ZAP1:
 
 | Type | Name | Trigger |
 |------|------|---------|
@@ -137,7 +137,7 @@ Consumer examples in `examples/`: wallet (Python), explorer (Python), indexer (b
 | /memo/decode | POST | universal memo classifier |
 | /lifecycle/{wallet_hash} | GET | events for a wallet |
 
-Interactive docs: [frontiercompute.io/api.html](https://frontiercompute.io/api.html)
+Interactive docs: [frontiercompute.cash/api.html](https://frontiercompute.cash/api.html)
 OpenAPI spec: [conformance/openapi.yaml](conformance/openapi.yaml)
 Reference clients: [Python](conformance/clients/zap1_client.py) | [TypeScript](conformance/clients/zap1_client.ts)
 
@@ -156,11 +156,11 @@ See [conformance/](conformance/) for fixtures, schemas, versioning policy, and c
 
 - **Verification SDK (Rust + WASM):** [Frontier-Compute/zap1-verify](https://github.com/Frontier-Compute/zap1-verify) - 22 tests
 - **JS/TS SDK:** [Frontier-Compute/zap1-js](https://github.com/Frontier-Compute/zap1-js) - 19 tests
-- **Attestation explorer:** [explorer.frontiercompute.io](https://explorer.frontiercompute.io)
-- **Lifecycle simulator:** [simulator.frontiercompute.io](https://simulator.frontiercompute.io)
-- **Browser verifier:** [frontiercompute.io/verify.html](https://frontiercompute.io/verify.html)
+- **Attestation explorer:** [explorer.frontiercompute.cash](https://explorer.frontiercompute.cash)
+- **Lifecycle simulator:** [simulator.frontiercompute.cash](https://simulator.frontiercompute.cash)
+- **Browser verifier:** [frontiercompute.cash/verify.html](https://frontiercompute.cash/verify.html)
 - **Universal memo decoder:** [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode) - 23 tests, zero deps
-- **Browser memo decoder:** [frontiercompute.io/memo.html](https://frontiercompute.io/memo.html)
+- **Browser memo decoder:** [frontiercompute.cash/memo.html](https://frontiercompute.cash/memo.html)
 - **Zaino gRPC:** validated on mainnet - [ZAINO_VALIDATION.md](ZAINO_VALIDATION.md)
 
 ## FROST Threshold Signing

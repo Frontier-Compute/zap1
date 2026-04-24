@@ -51,17 +51,19 @@ def main():
 
     confirmed = [a for a in anchors if a.get("height") is not None]
     if confirmed:
-        last_anchor = confirmed[-1]
-        if stats.get("last_anchor_block") != last_anchor.get("height"):
+        last_confirmed = confirmed[-1]
+        if stats.get("last_anchor_block") != last_confirmed.get("height"):
             errors.append(
-                f"stats last_anchor_block={stats.get('last_anchor_block')} does not match latest confirmed anchor height={last_anchor.get('height')}"
-            )
-        if status.get("last_anchor_txid") != last_anchor.get("txid"):
-            errors.append(
-                f"anchor/status txid={status.get('last_anchor_txid')} does not match latest confirmed anchor txid={last_anchor.get('txid')}"
+                f"stats last_anchor_block={stats.get('last_anchor_block')} does not match latest confirmed anchor height={last_confirmed.get('height')}"
             )
     elif anchors:
         errors.append("no confirmed anchors in history (all entries pending mainnet)")
+    if anchors:
+        latest_submission = anchors[-1]
+        if status.get("last_anchor_txid") != latest_submission.get("txid"):
+            errors.append(
+                f"anchor/status txid={status.get('last_anchor_txid')} does not match latest submission txid={latest_submission.get('txid')}"
+            )
 
     summary = {
         "protocol": protocol.get("protocol"),

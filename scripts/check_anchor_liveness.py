@@ -49,16 +49,19 @@ def main():
         elif last_age > 72:
             errors.append(f"last anchor is stale: {last_age}h old")
 
-    if anchors:
-        last_anchor = anchors[-1]
+    confirmed = [a for a in anchors if a.get("height") is not None]
+    if confirmed:
+        last_anchor = confirmed[-1]
         if stats.get("last_anchor_block") != last_anchor.get("height"):
             errors.append(
-                f"stats last_anchor_block={stats.get('last_anchor_block')} does not match latest anchor height={last_anchor.get('height')}"
+                f"stats last_anchor_block={stats.get('last_anchor_block')} does not match latest confirmed anchor height={last_anchor.get('height')}"
             )
         if status.get("last_anchor_txid") != last_anchor.get("txid"):
             errors.append(
-                f"anchor/status txid={status.get('last_anchor_txid')} does not match latest anchor txid={last_anchor.get('txid')}"
+                f"anchor/status txid={status.get('last_anchor_txid')} does not match latest confirmed anchor txid={last_anchor.get('txid')}"
             )
+    elif anchors:
+        errors.append("no confirmed anchors in history (all entries pending mainnet)")
 
     summary = {
         "protocol": protocol.get("protocol"),

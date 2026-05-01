@@ -1,0 +1,9 @@
+# zap1 CODEOWNERS
+#
+# Security-sensitive changes should have explicit owner review.
+
+* @Zk-nd3r
+SECURITY.md @Zk-nd3r
+.github/ @Zk-nd3r
+src/ @Zk-nd3r
+scripts/ @Zk-nd3r

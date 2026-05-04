@@ -17,6 +17,7 @@ BASE = (
     if len(sys.argv) > 1
     else os.environ.get("ZAP1_API_BASE", "https://api.frontiercompute.cash")
 ).rstrip("/")
+USER_AGENT = os.environ.get("ZAP1_USER_AGENT", "zap1-anchor-liveness/1.0")
 
 passed = 0
 failed = 0
@@ -38,7 +39,9 @@ API_KEY = "Blqr7I45XS-VHJDTDa_v7WBgWgqlpIYlQj4asaP-Y-g"
 def fetch(path, headers=None):
     url = f"{BASE}{path}"
     try:
-        req = urllib.request.Request(url, headers=headers or {})
+        request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        request_headers.update(headers or {})
+        req = urllib.request.Request(url, headers=request_headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.load(resp)
     except Exception as e:
@@ -48,7 +51,9 @@ def fetch(path, headers=None):
 def fetch_raw(path, headers=None, method="GET"):
     url = f"{BASE}{path}"
     try:
-        req = urllib.request.Request(url, headers=headers or {}, method=method)
+        request_headers = {"User-Agent": USER_AGENT}
+        request_headers.update(headers or {})
+        req = urllib.request.Request(url, headers=request_headers, method=method)
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status, resp.read().decode(), resp.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
@@ -151,7 +156,12 @@ def main():
     # /memo/decode
     hex_body = "5a4150313a30313a30373562303064663238363033386137623366366262373030353464663631333433653334383166626135373935393133353461303032313465396530313962"
     try:
-        req = urllib.request.Request(f"{BASE}/memo/decode", data=hex_body.encode(), method="POST")
+        req = urllib.request.Request(
+            f"{BASE}/memo/decode",
+            data=hex_body.encode(),
+            headers={"User-Agent": USER_AGENT},
+            method="POST",
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.load(resp)
         check("/memo/decode returns format", "format" in data)

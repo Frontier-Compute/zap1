@@ -8,11 +8,16 @@ import urllib.request
 
 BASE = os.environ.get("ZAP1_API_BASE", "https://api.frontiercompute.cash").rstrip("/")
 MAX_ANCHOR_AGE_HOURS = int(os.environ.get("ZAP1_MAX_ANCHOR_AGE_HOURS", "72"))
+USER_AGENT = os.environ.get("ZAP1_USER_AGENT", "zap1-anchor-liveness/1.0")
 
 
 def fetch(path: str):
     try:
-        with urllib.request.urlopen(f"{BASE}{path}", timeout=20) as resp:
+        req = urllib.request.Request(
+            f"{BASE}{path}",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
             try:
                 return json.load(resp)
             except json.JSONDecodeError as exc:

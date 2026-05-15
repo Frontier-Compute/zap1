@@ -23,4 +23,6 @@ jobs:
         run: python3 scripts/check_anchor_liveness.py
 
       - name: Validate API schemas
+        env:
+          ZAP1_ADMIN_API_KEY: ${{ secrets.ZAP1_ADMIN_API_KEY }}
         run: python3 conformance/check_api.py

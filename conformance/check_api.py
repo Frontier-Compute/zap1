@@ -8,6 +8,7 @@ Validate live ZAP1 API responses against the schema contract.
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -18,6 +19,8 @@ BASE = (
     else os.environ.get("ZAP1_API_BASE", "https://api.frontiercompute.cash")
 ).rstrip("/")
 USER_AGENT = os.environ.get("ZAP1_USER_AGENT", "zap1-anchor-liveness/1.0")
+API_RETRIES = int(os.environ.get("ZAP1_API_RETRIES", "3"))
+API_RETRY_DELAY_SECONDS = float(os.environ.get("ZAP1_API_RETRY_DELAY_SECONDS", "1"))
 
 passed = 0
 failed = 0
@@ -38,28 +41,34 @@ API_KEY = os.environ.get("ZAP1_ADMIN_API_KEY", "")
 
 def fetch(path, headers=None):
     url = f"{BASE}{path}"
-    try:
-        request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-        request_headers.update(headers or {})
-        req = urllib.request.Request(url, headers=request_headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.load(resp)
-    except Exception as e:
-        return None
+    for attempt in range(1, API_RETRIES + 1):
+        try:
+            request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+            request_headers.update(headers or {})
+            req = urllib.request.Request(url, headers=request_headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.load(resp)
+        except Exception:
+            if attempt >= API_RETRIES:
+                return None
+            time.sleep(API_RETRY_DELAY_SECONDS)
 
 
 def fetch_raw(path, headers=None, method="GET"):
     url = f"{BASE}{path}"
-    try:
-        request_headers = {"User-Agent": USER_AGENT}
-        request_headers.update(headers or {})
-        req = urllib.request.Request(url, headers=request_headers, method=method)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status, resp.read().decode(), resp.headers.get("Content-Type", "")
-    except urllib.error.HTTPError as e:
-        return e.code, "", ""
-    except Exception as e:
-        return 0, "", ""
+    for attempt in range(1, API_RETRIES + 1):
+        try:
+            request_headers = {"User-Agent": USER_AGENT}
+            request_headers.update(headers or {})
+            req = urllib.request.Request(url, headers=request_headers, method=method)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status, resp.read().decode(), resp.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as e:
+            return e.code, "", ""
+        except Exception:
+            if attempt >= API_RETRIES:
+                return 0, "", ""
+            time.sleep(API_RETRY_DELAY_SECONDS)
 
 
 def validate_required(data, schema, path):

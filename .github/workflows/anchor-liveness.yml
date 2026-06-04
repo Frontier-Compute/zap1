@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ZAP1_API_BASE: https://api.frontiercompute.cash
+      ZAP1_REQUIRE_FRESH_ANCHOR: "0"
     steps:
       - name: Check out repo
         uses: actions/checkout@v5

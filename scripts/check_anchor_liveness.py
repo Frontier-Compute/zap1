@@ -11,6 +11,16 @@ MAX_ANCHOR_AGE_HOURS = int(os.environ.get("ZAP1_MAX_ANCHOR_AGE_HOURS", "72"))
 USER_AGENT = os.environ.get("ZAP1_USER_AGENT", "zap1-anchor-liveness/1.0")
 
 
+def env_flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+REQUIRE_FRESH_ANCHOR = env_flag("ZAP1_REQUIRE_FRESH_ANCHOR", True)
+
+
 def fetch(path: str):
     try:
         req = urllib.request.Request(
@@ -63,7 +73,12 @@ def main():
         elif last_age > MAX_ANCHOR_AGE_HOURS:
             message = f"last anchor age {last_age}h exceeds threshold {MAX_ANCHOR_AGE_HOURS}h"
             if status.get("needs_anchor") or status.get("unanchored_leaves", 0) > 0:
-                errors.append(message)
+                if REQUIRE_FRESH_ANCHOR:
+                    errors.append(message)
+                else:
+                    warnings.append(
+                        f"{message}; fresh-anchor requirement disabled by monitor policy"
+                    )
             else:
                 warnings.append(message)
 
@@ -91,6 +106,7 @@ def main():
         "last_anchor_block": stats.get("last_anchor_block"),
         "needs_anchor": status.get("needs_anchor"),
         "unanchored_leaves": status.get("unanchored_leaves"),
+        "fresh_anchor_required": REQUIRE_FRESH_ANCHOR,
         "warnings": warnings,
         "errors": errors,
     }

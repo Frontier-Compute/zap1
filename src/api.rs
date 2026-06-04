@@ -414,8 +414,19 @@ async fn health(
         Err(_) => (0, false),
     };
 
-    let sync_lag = chain_tip.saturating_sub(last_scanned);
-    let scanner_operational = rpc_reachable && chain_tip > 0 && sync_lag < 100;
+    // A node tip BELOW our last scanned height means the node was reset or is resyncing
+    // (e.g. a zebrad v5.0.0 post-Orchard resync). The scanner cannot advance past
+    // last_scanned until the node climbs back, so it is NOT operational. saturating_sub
+    // would mask this as lag 0 and report a false-healthy scanner; detect the inversion
+    // and surface it honestly instead.
+    let node_behind_scan = chain_tip < last_scanned;
+    let sync_lag = if node_behind_scan {
+        last_scanned - chain_tip
+    } else {
+        chain_tip - last_scanned
+    };
+    let scanner_operational =
+        rpc_reachable && chain_tip > 0 && !node_behind_scan && sync_lag < 100;
 
     let network = format!("{:?}", state.config.network);
 

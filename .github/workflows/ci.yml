@@ -74,6 +74,9 @@ jobs:
       - name: Liveness script compiles
         run: python3 -m py_compile scripts/check_anchor_liveness.py
 
+      - name: Liveness policy tests
+        run: python3 -m unittest scripts/check_anchor_liveness_test.py
+
       - name: Conformance protocol checks
         run: python3 conformance/check.py
 

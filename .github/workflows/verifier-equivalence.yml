@@ -1,0 +1,47 @@
+name: verifier-equivalence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Three independently written ZAP1 verifiers (Python verify_proof.py, Rust
+# zap1-verify, and the TypeScript-family Node runner) each compute a canonical
+# fingerprint over a frozen corpus. This job fails if they disagree, or if the
+# live output drifts from the committed reference. See equivalence/README.md.
+jobs:
+  equivalence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Python verifier fingerprints
+        run: python3 equivalence/fingerprint.py > "$RUNNER_TEMP/fp-python.txt"
+
+      - name: Rust verifier fingerprints
+        run: |
+          cargo run --quiet --manifest-path equivalence/rust/Cargo.toml -- \
+            equivalence/corpus.json > "$RUNNER_TEMP/fp-rust.txt"
+
+      - name: TypeScript verifier fingerprints
+        run: node equivalence/typescript/fingerprint.mjs > "$RUNNER_TEMP/fp-typescript.txt"
+
+      - name: Cross-implementation equivalence (python vs rust)
+        run: diff -u "$RUNNER_TEMP/fp-python.txt" "$RUNNER_TEMP/fp-rust.txt"
+
+      - name: Cross-implementation equivalence (python vs typescript)
+        run: diff -u "$RUNNER_TEMP/fp-python.txt" "$RUNNER_TEMP/fp-typescript.txt"
+
+      - name: Frozen corpus (python vs committed reference)
+        run: diff -u equivalence/fingerprints.expected.txt "$RUNNER_TEMP/fp-python.txt"

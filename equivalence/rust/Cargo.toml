@@ -1,0 +1,16 @@
+[package]
+name = "zap1-fingerprint"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-implementation verifier fingerprint for the ZAP1 attestation protocol"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "zap1_fingerprint"
+path = "src/main.rs"
+
+[dependencies]
+zap1-verify = { path = "../../zap1-verify" }
+sha2 = "0.10"
+serde_json = "1"

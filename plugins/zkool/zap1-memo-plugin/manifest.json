@@ -1,0 +1,10 @@
+{
+    "id": "cash.frontiercompute.zap1-memo",
+    "name": "ZAP1 Memo Parser",
+    "version": "1.0.0",
+    "author": "Frontier Compute",
+    "description": "Parses ZAP1 structured attestation memos.",
+    "min_app_version": "6.20.0",
+    "types": ["memo"],
+    "entry_point": "main.rhai"
+}

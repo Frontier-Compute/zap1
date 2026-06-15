@@ -14,7 +14,7 @@ No PII on-chain.  No trust in Frontier Compute servers - the proof is independen
 2. The app posts a TRANSFER event to ZAP1 with the wallet hashes and intent TX ID
 3. ZAP1 returns a leaf hash and inserts it into the Merkle tree
 4. The Merkle root is periodically anchored to Zcash (every 10 events or 24h)
-5. The user can verify at `pay.frontiercompute.io/verify/{leaf_hash}`
+5. The user can verify at `api.frontiercompute.cash/verify/{leaf_hash}`
 
 The TRANSFER event (type 0x07) is used because a CrossPay swap is an ownership transfer - value moves from shielded ZEC to a destination asset on another chain.  The NEAR Intent TX ID serves as the serial number binding the two sides.
 
@@ -25,7 +25,7 @@ Hash construction: `BLAKE2b_32(0x07 || len(source_wallet_hash) || source_wallet_
 ```typescript
 import { CrossPayAttestation } from "@AnchorPay/zodl-crossPay-attestation";
 
-const zap1 = new CrossPayAttestation("https://pay.frontiercompute.io", API_KEY);
+const zap1 = new CrossPayAttestation("https://api.frontiercompute.cash", API_KEY);
 
 const receipt = await zap1.attest(swapResult);
 ```
@@ -37,7 +37,7 @@ const receipt = await zap1.attest(swapResult);
 ```typescript
 import { CrossPayAttestation, CrossPaySwap } from "@AnchorPay/zodl-crossPay-attestation";
 
-const zap1 = new CrossPayAttestation("https://pay.frontiercompute.io", process.env.ZAP1_API_KEY!);
+const zap1 = new CrossPayAttestation("https://api.frontiercompute.cash", process.env.ZAP1_API_KEY!);
 
 // After CrossPay swap completes via NEAR Intents
 const swap: CrossPaySwap = {
@@ -55,7 +55,7 @@ const swap: CrossPaySwap = {
 const receipt = await zap1.attest(swap);
 
 console.log(receipt.leafHash);     // 64-char hex leaf hash
-console.log(receipt.verifyUrl);    // https://pay.frontiercompute.io/verify/{hash}
+console.log(receipt.verifyUrl);    // https://api.frontiercompute.cash/verify/{hash}
 
 // Verify later
 const check = await zap1.verify(receipt.leafHash);
@@ -97,7 +97,7 @@ suspend fun attestSwap(
     intentTxId: String,
     apiKey: String
 ): String {
-    val url = URL("https://pay.frontiercompute.io/event")
+    val url = URL("https://api.frontiercompute.cash/event")
     val conn = url.openConnection() as HttpURLConnection
     conn.requestMethod = "POST"
     conn.setRequestProperty("Content-Type", "application/json")
@@ -134,7 +134,7 @@ val leafHash = attestSwap(
 )
 
 // Display verification link
-val verifyUrl = "https://pay.frontiercompute.io/verify/$leafHash"
+val verifyUrl = "https://api.frontiercompute.cash/verify/$leafHash"
 ```
 
 The existing `Zap1MemoFormatter` from the memo rendering PR will parse any ZAP1 memos the user receives, including TRANSFER events from CrossPay swaps.  See `contrib/zodl-android/Zap1MemoFormatter.kt`.
@@ -148,7 +148,7 @@ func attestSwap(
     intentTxId: String,
     apiKey: String
 ) async throws -> String {
-    let url = URL(string: "https://pay.frontiercompute.io/event")!
+    let url = URL(string: "https://api.frontiercompute.cash/event")!
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -183,7 +183,7 @@ let leafHash = try await attestSwap(
     apiKey: Config.zap1ApiKey
 )
 
-let verifyUrl = "https://pay.frontiercompute.io/verify/\(leafHash)"
+let verifyUrl = "https://api.frontiercompute.cash/verify/\(leafHash)"
 ```
 
 The existing `Zap1MemoParser` handles memo rendering.  See `contrib/zodl-ios/Zap1MemoParser.swift`.
@@ -195,7 +195,7 @@ The existing `Zap1MemoParser` handles memo rendering.  See `contrib/zodl-ios/Zap
 Creates a TRANSFER attestation leaf.
 
 ```
-POST https://pay.frontiercompute.io/event
+POST https://api.frontiercompute.cash/event
 Authorization: Bearer {API_KEY}
 Content-Type: application/json
 
@@ -244,7 +244,7 @@ Full proof bundle with Merkle path, root, and anchor txid for independent verifi
 Every leaf hash has a human-readable verification page at:
 
 ```
-https://pay.frontiercompute.io/verify/{leaf_hash}
+https://api.frontiercompute.cash/verify/{leaf_hash}
 ```
 
 This page shows the leaf hash, event type, Merkle proof path, root hash, and the Zcash anchor transaction.  Users can share this URL as proof of swap.
@@ -260,7 +260,7 @@ Use `NordicShield_` as the BLAKE2b personalization for consistency with ZAP1 has
 
 ## Links
 
-- Verify page: `https://pay.frontiercompute.io/verify/{leaf_hash}`
+- Verify page: `https://api.frontiercompute.cash/verify/{leaf_hash}`
 - Protocol spec: [ONCHAIN_PROTOCOL.md](../ONCHAIN_PROTOCOL.md)
 - OpenAPI spec: [conformance/openapi.yaml](../conformance/openapi.yaml)
 - Memo rendering PR (Android): [zodl-inc/zodl-android#2173](https://github.com/zodl-inc/zodl-android/pull/2173)

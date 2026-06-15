@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Validate any ZAP1 instance. Takes a base URL and runs protocol checks.
-# Usage: ./validate_instance.sh https://pay.frontiercompute.io
+# Usage: ./validate_instance.sh https://api.frontiercompute.cash
 #        ./validate_instance.sh http://localhost:3081
 
 API="${1:?Usage: $0 <base_url>}"

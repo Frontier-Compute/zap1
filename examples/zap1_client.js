@@ -4,7 +4,7 @@
  * Works in Node.js and browsers (via fetch).
  *
  * Usage:
- *   const zap1 = new ZAP1Client('https://pay.frontiercompute.io');
+ *   const zap1 = new ZAP1Client('https://api.frontiercompute.cash');
  *   const stats = await zap1.stats();
  *   const proof = await zap1.verifyLeaf('abc123...');
  *   const event = await zap1.createEvent('DEPLOYMENT', { wallet_hash: '...', serial_number: '...', facility_id: '...' });
@@ -61,7 +61,7 @@ class ZAP1Client {
 
 // CLI demo
 if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].includes('zap1_client')) {
-  const url = process.argv[2] || 'https://pay.frontiercompute.io';
+  const url = process.argv[2] || 'https://api.frontiercompute.cash';
   const client = new ZAP1Client(url);
 
   (async () => {

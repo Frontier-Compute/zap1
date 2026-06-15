@@ -9,7 +9,7 @@ Polls the /events endpoint and builds a local index of attestations.
 import json
 import urllib.request
 
-API = "https://pay.frontiercompute.io"
+API = "https://api.frontiercompute.cash"
 
 
 def fetch_events(limit: int = 50) -> list:

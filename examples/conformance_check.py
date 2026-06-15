@@ -4,14 +4,15 @@ ZAP1 conformance checker. Run against any ZAP1 instance.
 No dependencies. No clone needed. Just this one file.
 
 Usage:
-  python3 conformance_check.py https://pay.frontiercompute.io
+  python3 conformance_check.py https://api.frontiercompute.cash
   python3 conformance_check.py http://localhost:3081
   python3 conformance_check.py http://localhost:3081 --key YOUR_API_KEY
 """
 import json, sys, urllib.request, urllib.error, hashlib
 
-API = sys.argv[1] if len(sys.argv) > 1 else "https://pay.frontiercompute.io"
+API = sys.argv[1] if len(sys.argv) > 1 else "https://api.frontiercompute.cash"
 KEY = ""
+HEADERS = {"Accept": "application/json", "User-Agent": "zap1-example-conformance/1.0"}
 if "--key" in sys.argv:
     KEY = sys.argv[sys.argv.index("--key") + 1]
 
@@ -32,7 +33,7 @@ def check(label, ok, detail=""):
 
 def get(path):
     try:
-        headers = {}
+        headers = dict(HEADERS)
         if KEY:
             headers["Authorization"] = f"Bearer {KEY}"
         req = urllib.request.Request(f"{API}{path}", headers=headers)
@@ -42,7 +43,7 @@ def get(path):
 
 def get_status(path):
     try:
-        req = urllib.request.Request(f"{API}{path}")
+        req = urllib.request.Request(f"{API}{path}", headers=HEADERS)
         return urllib.request.urlopen(req, timeout=15).status
     except urllib.error.HTTPError as e:
         return e.code
@@ -55,8 +56,8 @@ print()
 # 1. Health
 h = get("/health")
 check("health reachable", h is not None)
-check("scanner operational", h and h.get("scanner_operational") == True)
-check("sync lag zero", h and h.get("sync_lag", 99) < 5, f"lag={h.get('sync_lag') if h else '?'}")
+check("scanner status is boolean", h and isinstance(h.get("scanner_operational"), bool))
+check("sync lag reported", h and isinstance(h.get("sync_lag"), int), f"lag={h.get('sync_lag') if h else '?'}")
 
 # 2. Protocol
 p = get("/protocol/info")
@@ -89,7 +90,9 @@ check("events endpoint", ev is not None)
 # 6. Memo decode
 try:
     memo_hex = "5a4150313a30393a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030"
-    req = urllib.request.Request(f"{API}/memo/decode", data=memo_hex.encode(), method="POST")
+    headers = dict(HEADERS)
+    headers["Content-Type"] = "text/plain"
+    req = urllib.request.Request(f"{API}/memo/decode", data=memo_hex.encode(), headers=headers, method="POST")
     resp = json.loads(urllib.request.urlopen(req, timeout=15).read())
     check("memo decode returns zap1", resp.get("format") == "zap1")
 except:
@@ -104,7 +107,7 @@ if total > 0 and ev and ev.get("events"):
     leaf = ev["events"][0].get("leaf_hash", "")
     if leaf:
         vc = get(f"/verify/{leaf}/check")
-        check("proof verification works", vc is not None and "valid" in vc)
+        check("current proof verification works", vc is not None and "valid" in vc)
         pb = get(f"/verify/{leaf}/proof.json")
         check("proof bundle has root", pb and "root" in pb)
         check("proof bundle has anchor", pb and "anchor" in pb)

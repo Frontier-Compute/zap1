@@ -4,7 +4,7 @@ set -euo pipefail
 # ZAP1 Quickstart - see the whole protocol in 60 seconds
 # No install needed. Just curl and python3.
 
-API="https://pay.frontiercompute.io"
+API="${ZAP1_API_BASE:-https://api.frontiercompute.cash}"
 GREEN='\033[0;32m'
 GOLD='\033[0;33m'
 DIM='\033[0;90m'
@@ -37,18 +37,9 @@ for a in d['anchors'][-2:]:
 "
 echo ""
 
-# 3. Verify a proof
-LEAF="075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
-echo -e "${GREEN}3. Verify a proof${RST}"
-curl -sf "$API/verify/$LEAF/check" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-anchor = d.get('anchor', {})
-print(f'   Leaf: $LEAF')
-print(f'   Valid: {d[\"valid\"]}')
-print(f'   Anchor block: {anchor.get(\"height\", \"pending\")}')
-print(f'   Txid: {anchor.get(\"txid\", \"pending\")[:24]}...')
-"
+# 3. Verify a bundled proof without trusting the live server
+echo -e "${GREEN}3. Verify a bundled proof locally${RST}"
+python3 "$(dirname "$0")/verify_proof.py" "$(dirname "$0")/proof_bundle_example.json" | sed 's/^/   /'
 echo ""
 
 # 4. Decode a memo

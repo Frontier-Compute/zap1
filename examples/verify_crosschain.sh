@@ -5,7 +5,7 @@ set -euo pipefail
 # Fetches a proof from the ZAP1 API, then calls the on-chain verifier.
 # Requires: curl, python3, cast (foundry)
 
-API="https://pay.frontiercompute.io"
+API="${ZAP1_API_BASE:-https://api.frontiercompute.cash}"
 VERIFIER="0x3fD65055A8dC772C848E7F227CE458803005C87F"
 RPC="https://ethereum-sepolia-rpc.publicnode.com"
 
@@ -18,8 +18,17 @@ echo "ZAP1 cross-chain verification"
 echo "============================="
 echo ""
 
-# 1. Fetch a proof from Zcash mainnet
-LEAF=${1:-075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b}
+# 1. Fetch a proof from Zcash mainnet. If no leaf is supplied, use the
+# deployment's current event instead of a historical fixture leaf.
+if [ $# -gt 0 ]; then
+    LEAF="$1"
+else
+    LEAF=$(curl -sf "$API/events?limit=1" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['events'][0]['leaf_hash'] if d.get('events') else '')")
+fi
+if [ -z "$LEAF" ]; then
+    echo -e "${RED}FAIL${RST}  Could not discover a current leaf from API"
+    exit 1
+fi
 echo -e "${CYN}Zcash${RST}  Fetching proof for ${LEAF:0:16}..."
 
 PROOF=$(curl -sf "$API/verify/$LEAF/proof.json")

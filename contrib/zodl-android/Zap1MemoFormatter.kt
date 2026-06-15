@@ -67,7 +67,7 @@ object Zap1MemoFormatter {
         val label: String,
         val hash: String
     ) {
-        val verifyUrl get() = "https://pay.frontiercompute.io/verify/$hash"
+        val verifyUrl get() = "https://api.frontiercompute.cash/verify/$hash"
         val shortHash get() = hash.take(12) + "..."
         val isLegacy get() = prefix == "NSM1"
     }

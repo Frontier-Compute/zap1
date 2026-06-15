@@ -23,7 +23,7 @@ Serve or open `verify-standalone.html` directly. Enter a leaf hash, click Verify
 ```jsx
 import { ProofVerifier } from '@frontier-compute/verify-widget/verifier';
 
-<ProofVerifier apiBase="https://pay.frontiercompute.io" />
+<ProofVerifier apiBase="https://api.frontiercompute.cash" />
 ```
 
 ### BLAKE2b library
@@ -59,7 +59,7 @@ Input: PROGRAM_ENTRY, wallet_hash = "e2e_wallet_20260327"
 Leaf:  075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b
 ```
 
-Verified against Python `hashlib.blake2b` and the live API at `pay.frontiercompute.io`.
+Verified against Python `hashlib.blake2b` and the live API at `api.frontiercompute.cash`.
 
 ## API
 

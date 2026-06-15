@@ -140,8 +140,8 @@ async fn handle_key(db: &Db, sender: &str) -> String {
                 "Your API key (store it, shown once):\n\n\
                  {}\n\n\
                  Tier: Explorer (50 attestations/mo)\n\
-                 Endpoint: POST https://pay.frontiercompute.io/attest\n\
-                 Docs: https://pay.frontiercompute.io/protocol/info",
+                 Endpoint: POST https://api.frontiercompute.cash/attest\n\
+                 Docs: https://api.frontiercompute.cash/protocol/info",
                 raw_key
             )
         }
@@ -301,7 +301,7 @@ async fn handle_dashboard(db: &Db, sender: &str) -> String {
     }
 
     msg.push_str(&format!(
-        "\n\nhttps://pay.frontiercompute.io/miner/{}",
+        "\n\nhttps://api.frontiercompute.cash/miner/{}",
         wallet_hash
     ));
 
@@ -355,7 +355,7 @@ async fn handle_payout(db: &Db, sender: &str) -> String {
     }
 
     msg.push_str(&format!(
-        "\n\nhttps://pay.frontiercompute.io/miner/{}",
+        "\n\nhttps://api.frontiercompute.cash/miner/{}",
         wallet_hash
     ));
 
@@ -393,7 +393,7 @@ async fn handle_status(db: &Db) -> String {
         ));
     }
 
-    msg.push_str("\n\nhttps://pay.frontiercompute.io/stats");
+    msg.push_str("\n\nhttps://api.frontiercompute.cash/stats");
     msg
 }
 
@@ -462,8 +462,9 @@ fn handle_verify(text: &str) -> String {
         return "Provide a valid hex hash after 'verify'.".to_string();
     }
     format!(
-        "Verify: https://pay.frontiercompute.io/verify/{}/check\n\
-         Explorer: https://explorer.frontiercompute.io",
+        "Verify: https://api.frontiercompute.cash/verify/{}/check\n\
+         Proof: https://api.frontiercompute.cash/verify/{}/proof.json",
+        hash,
         hash
     )
 }

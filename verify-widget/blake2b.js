@@ -149,7 +149,16 @@ const NODE_PERSONAL = new Uint8Array([
   0x69,0x65,0x6c,0x64,0x5f,0x4d,0x52,0x4b,
 ]);
 
+// "NordicShield_RTK" (16 bytes)
+const ROOT_PERSONAL = new Uint8Array([
+  0x4e,0x6f,0x72,0x64,0x69,0x63,0x53,0x68,
+  0x69,0x65,0x6c,0x64,0x5f,0x52,0x54,0x4b,
+]);
+
 const ENCODER = new TextEncoder();
+export const COUNT_BOUND_SCHEME = "ZAP1_COUNT_BOUND_V2";
+export const LEGACY_SCHEME = "ZAP1_LEGACY_DUPLICATE_ODD";
+export const LEGACY_ROOT_MAX_ANCHOR_HEIGHT = 3317133;
 
 // Event-type prefix bytes (known types)
 const EVENT_PREFIX = {
@@ -201,13 +210,28 @@ export function nodeHash(left, right) {
   return blake2b256(input, NODE_PERSONAL);
 }
 
+export function commitRoot(leafCount, rawRoot) {
+  const count = BigInt(leafCount);
+  if (count <= 0n) throw new Error("leaf_count must be positive");
+  const input = new Uint8Array(41);
+  input[0] = 1;
+  let tmp = count;
+  for (let i = 8; i >= 1; i--) {
+    input[i] = Number(tmp & 0xffn);
+    tmp >>= 8n;
+  }
+  input.set(rawRoot, 9);
+  return blake2b256(input, ROOT_PERSONAL);
+}
+
 /**
  * Walk a Merkle proof from leaf to root.
  * @param {string} leafHashHex
  * @param {Array<{hash: string, position: string}>} proof - sibling steps
- * @returns {{ computedRoot: string, steps: Array<{left: string, right: string, result: string}> }}
+ * @param {number} [leafCount]
+ * @returns {{ computedRoot: string, legacyRoot: string, rootScheme: string, steps: Array<{left: string, right: string, result: string}> }}
  */
-export function walkProof(leafHashHex, proof) {
+export function walkProof(leafHashHex, proof, leafCount) {
   let current = hexToBytes(leafHashHex);
   const steps = [];
 
@@ -227,5 +251,31 @@ export function walkProof(leafHashHex, proof) {
     });
   }
 
-  return { computedRoot: bytesToHex(current), steps };
+  const legacyRoot = bytesToHex(current);
+  if (leafCount === undefined || leafCount === null) {
+    return {
+      computedRoot: legacyRoot,
+      legacyRoot,
+      rootScheme: LEGACY_SCHEME,
+      steps,
+    };
+  }
+
+  return {
+    computedRoot: bytesToHex(commitRoot(leafCount, current)),
+    legacyRoot,
+    rootScheme: COUNT_BOUND_SCHEME,
+    steps,
+  };
+}
+
+export function isHistoricalLegacyBundle(bundle) {
+  const scheme = bundle?.root?.scheme;
+  const height = bundle?.anchor?.height;
+  return (
+    scheme === LEGACY_SCHEME &&
+    height !== undefined &&
+    height !== null &&
+    Number(height) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
+  );
 }

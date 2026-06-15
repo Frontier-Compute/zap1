@@ -5,9 +5,13 @@ import {
   bytesToHex,
   computeLeafHash,
   walkProof,
+  isHistoricalLegacyBundle,
+  COUNT_BOUND_SCHEME,
+  LEGACY_SCHEME,
+  LEGACY_ROOT_MAX_ANCHOR_HEIGHT,
 } from "./blake2b.js";
 
-const API = "https://pay.frontiercompute.io";
+const API = "https://api.frontiercompute.cash";
 
 // Styles
 
@@ -355,12 +359,35 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
       }
 
       // 2. Walk the Merkle proof
-      const { computedRoot, steps } = walkProof(data.leaf.hash, data.proof);
+      const { computedRoot, legacyRoot, steps } = walkProof(
+        data.leaf.hash,
+        data.proof,
+        data.root.leaf_count
+      );
 
       // 3. Compare
-      const rootMatch = computedRoot === data.root.hash;
+      const rootMatchV2 = data.root.leaf_count != null && computedRoot === data.root.hash;
+      const rootMatchLegacy = legacyRoot === data.root.hash;
+      const legacyAllowed = rootMatchLegacy && isHistoricalLegacyBundle(data);
+      const rootMatch = rootMatchV2 || legacyAllowed;
+      const rootScheme = rootMatchV2
+        ? COUNT_BOUND_SCHEME
+        : rootMatchLegacy
+          ? LEGACY_SCHEME
+          : "INVALID";
 
-      setResult({ leafMatch, rootMatch, computedRoot, steps, leafRecomputed, recomputedHash });
+      setResult({
+        leafMatch,
+        rootMatch,
+        rootScheme,
+        rootMatchLegacy,
+        legacyAllowed,
+        computedRoot,
+        legacyRoot,
+        steps,
+        leafRecomputed,
+        recomputedHash,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -462,6 +489,16 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                   : "Merkle path computed root does NOT match declared root"}
               </span>
             </div>
+            {result.rootScheme === LEGACY_SCHEME && result.legacyAllowed && (
+              <div style={{ fontSize: "12px", color: "#f59e0b", marginTop: "8px" }}>
+                Legacy root: historical anchor verified through block {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}; leaf count is not bound by this root.
+              </div>
+            )}
+            {result.rootScheme === LEGACY_SCHEME && !result.legacyAllowed && (
+              <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "8px" }}>
+                Legacy raw root rejected: requires root.scheme={LEGACY_SCHEME} and historical anchor height.
+              </div>
+            )}
           </div>
 
           {/* Leaf info */}
@@ -553,7 +590,13 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                           ? result.rootMatch ? s.nodeRoot : s.nodeRootFail
                           : s.nodeComputed),
                       }}
-                      title={step.result}
+                      title={
+                        isLast
+                          ? result.rootScheme === LEGACY_SCHEME
+                            ? result.legacyRoot
+                            : result.computedRoot
+                          : step.result
+                      }
                     >
                       <span
                         style={{
@@ -564,7 +607,14 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                       >
                         {isLast ? "Computed Root" : `Node ${i + 1}`}
                       </span>
-                      {truncHash(step.result, 16)}
+                      {truncHash(
+                        isLast
+                          ? result.rootScheme === LEGACY_SCHEME
+                            ? result.legacyRoot
+                            : result.computedRoot
+                          : step.result,
+                        16
+                      )}
                     </div>
                   </div>
                 );

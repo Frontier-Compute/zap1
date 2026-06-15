@@ -1,6 +1,6 @@
 [package]
 name = "zap1-verify"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Standalone Merkle proof verifier for the ZAP1 attestation protocol on Zcash"
 license = "MIT"

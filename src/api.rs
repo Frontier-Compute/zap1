@@ -93,6 +93,10 @@ pub struct AppState {
 }
 
 pub const PROTOCOL_VERSION: &str = "3.0.0";
+const COUNT_BOUND_SCHEME: &str = "ZAP1_COUNT_BOUND_V2";
+const LEGACY_SCHEME: &str = "ZAP1_LEGACY_DUPLICATE_ODD";
+const INVALID_SCHEME: &str = "INVALID";
+const LEGACY_ROOT_MAX_ANCHOR_HEIGHT: u32 = 3_317_133;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -136,7 +140,7 @@ pub fn router(state: AppState) -> Router {
                     "https://frontiercompute.io".parse().unwrap(),
                     "https://verify.frontiercompute.cash".parse().unwrap(),
                     "https://nordicshield.cash".parse().unwrap(),
-                    "https://pay.frontiercompute.io".parse().unwrap(),
+                    "https://api.frontiercompute.cash".parse().unwrap(),
                 ])
                 .allow_methods([
                     axum::http::Method::GET,
@@ -461,7 +465,7 @@ async fn anchor_status(
         "last_anchor_height": anchor_height,
         "needs_anchor": needs_anchor,
         "anchor_threshold": 10,
-        "recommendation": if unanchored >= 10 { "anchor now" } else if unanchored > 0 { "anchor when convenient" } else { "up to date" },
+        "recommendation": if needs_anchor && unanchored == 0 { "anchor current root" } else if unanchored >= 10 { "anchor now" } else if unanchored > 0 { "anchor when convenient" } else { "up to date" },
     })))
 }
 
@@ -711,7 +715,7 @@ async fn assign_miner(
             "serial": req.serial_number,
             "leaf_hash": leaf.leaf_hash,
             "root_hash": root.root_hash,
-            "verify_url": format!("/verify/{}", leaf.leaf_hash),
+            "verify_url": format!("/verify/{}/check", leaf.leaf_hash),
         })),
     ))
 }
@@ -740,7 +744,7 @@ async fn viewing_key_info(
             let leaf_hash = hex::encode(crate::memo::hash_ownership_attest(&wallet_hash, serial));
             serde_json::json!({
                 "serial": serial,
-                "verify_url": format!("/verify/{}", leaf_hash),
+                "verify_url": format!("/verify/{}/check", leaf_hash),
             })
         })
         .collect();
@@ -846,6 +850,7 @@ async fn proof_bundle_json(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Leaf not found".to_string()))?;
 
+    let merkle = verify_bundle_merkle(&bundle)?;
     let proof_steps: Vec<serde_json::Value> = bundle.proof.iter().map(|s| {
         serde_json::json!({ "hash": s.hash, "position": format!("{:?}", s.position).to_lowercase() })
     }).collect();
@@ -865,18 +870,90 @@ async fn proof_bundle_json(
             "hash": bundle.root.root_hash,
             "leaf_count": bundle.root.leaf_count,
             "created_at": bundle.root.created_at,
+            "scheme": merkle.scheme,
+            "legacy_allowed": merkle.legacy_allowed,
+            "legacy_max_anchor_height": LEGACY_ROOT_MAX_ANCHOR_HEIGHT,
         },
         "anchor": {
             "txid": bundle.root.anchor_txid,
             "height": bundle.root.anchor_height,
         },
-        "verify_command": format!(
-            "python3 verify_proof.py --wallet-hash {} {} --proof proof.json --root {}",
-            bundle.leaf.wallet_hash,
-            bundle.leaf.serial_number.as_ref().map(|s| format!("--serial {}", s)).unwrap_or_default(),
-            bundle.root.root_hash
-        ),
+        "verify_command": "python3 examples/verify_proof.py proof.json",
     })))
+}
+
+struct BundleMerkleCheck {
+    valid: bool,
+    scheme: &'static str,
+    valid_count_bound: bool,
+    valid_legacy_raw: bool,
+    legacy_allowed: bool,
+}
+
+fn is_historical_legacy_anchor(anchor_height: Option<u32>) -> bool {
+    anchor_height
+        .map(|height| height <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT)
+        .unwrap_or(false)
+}
+
+fn bundle_proof_steps(
+    bundle: &crate::merkle::VerificationBundle,
+) -> Result<Vec<zap1_verify::ProofStep>, (StatusCode, String)> {
+    bundle
+        .proof
+        .iter()
+        .map(|s| {
+            let hash = zap1_verify::hex_to_bytes32(&s.hash).ok_or((
+                StatusCode::BAD_REQUEST,
+                format!("Invalid proof hash hex: {}", s.hash),
+            ))?;
+            let position = match format!("{:?}", s.position).to_lowercase().as_str() {
+                "left" => zap1_verify::SiblingPosition::Left,
+                "right" => zap1_verify::SiblingPosition::Right,
+                other => {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Invalid proof position: {other}"),
+                    ))
+                }
+            };
+            Ok(zap1_verify::ProofStep { hash, position })
+        })
+        .collect()
+}
+
+fn verify_bundle_merkle(
+    bundle: &crate::merkle::VerificationBundle,
+) -> Result<BundleMerkleCheck, (StatusCode, String)> {
+    let leaf_bytes = zap1_verify::hex_to_bytes32(&bundle.leaf.leaf_hash)
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid leaf hash hex".to_string()))?;
+    let root_bytes = zap1_verify::hex_to_bytes32(&bundle.root.root_hash)
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid root hash hex".to_string()))?;
+    let proof_steps = bundle_proof_steps(bundle)?;
+
+    let valid_count_bound = zap1_verify::verify_proof(
+        &leaf_bytes,
+        &proof_steps,
+        bundle.root.leaf_count,
+        &root_bytes,
+    );
+    let valid_legacy_raw = zap1_verify::verify_legacy_proof(&leaf_bytes, &proof_steps, &root_bytes);
+    let legacy_allowed = valid_legacy_raw && is_historical_legacy_anchor(bundle.root.anchor_height);
+    let scheme = if valid_count_bound {
+        COUNT_BOUND_SCHEME
+    } else if valid_legacy_raw {
+        LEGACY_SCHEME
+    } else {
+        INVALID_SCHEME
+    };
+
+    Ok(BundleMerkleCheck {
+        valid: valid_count_bound || legacy_allowed,
+        scheme,
+        valid_count_bound,
+        valid_legacy_raw,
+        legacy_allowed,
+    })
 }
 
 /// Server-side Merkle proof verification using zap1-verify SDK.
@@ -890,38 +967,24 @@ async fn verify_check(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Leaf not found".to_string()))?;
 
-    // Convert proof steps to zap1_verify types
-    let leaf_bytes = zap1_verify::hex_to_bytes32(&bundle.leaf.leaf_hash)
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid leaf hash hex".to_string()))?;
-    let root_bytes = zap1_verify::hex_to_bytes32(&bundle.root.root_hash)
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid root hash hex".to_string()))?;
-
-    let proof_steps: Vec<zap1_verify::ProofStep> = bundle
-        .proof
-        .iter()
-        .map(|s| {
-            let hash = zap1_verify::hex_to_bytes32(&s.hash).unwrap_or([0u8; 32]);
-            let position = match format!("{:?}", s.position).to_lowercase().as_str() {
-                "left" => zap1_verify::SiblingPosition::Left,
-                _ => zap1_verify::SiblingPosition::Right,
-            };
-            zap1_verify::ProofStep { hash, position }
-        })
-        .collect();
-
-    let valid = zap1_verify::verify_proof(&leaf_bytes, &proof_steps, &root_bytes);
+    let merkle = verify_bundle_merkle(&bundle)?;
 
     Ok(Json(serde_json::json!({
         "protocol": "ZAP1",
-        "valid": valid,
+        "valid": merkle.valid,
+        "merkle_scheme": merkle.scheme,
+        "legacy_shape_warning": merkle.valid_legacy_raw && !merkle.valid_count_bound,
+        "legacy_accepted": merkle.legacy_allowed,
+        "legacy_max_anchor_height": LEGACY_ROOT_MAX_ANCHOR_HEIGHT,
         "leaf_hash": bundle.leaf.leaf_hash,
         "event_type": bundle.leaf.event_type.label(),
         "root": bundle.root.root_hash,
+        "leaf_count": bundle.root.leaf_count,
         "anchor": {
             "txid": bundle.root.anchor_txid,
             "height": bundle.root.anchor_height,
         },
-        "server_verified": true,
+        "server_verified": merkle.valid,
         "verification_sdk": "zap1-verify",
     })))
 }
@@ -945,6 +1008,11 @@ async fn anchor_history(
                 "height": r.anchor_height,
                 "leaf_count": r.leaf_count,
                 "created_at": r.created_at,
+                "scheme": if is_historical_legacy_anchor(r.anchor_height) {
+                    LEGACY_SCHEME
+                } else {
+                    COUNT_BOUND_SCHEME
+                },
             })
         })
         .collect();
@@ -1011,7 +1079,7 @@ async fn recent_events(
                 "wallet_hash": l.wallet_hash,
                 "serial_number": l.serial_number,
                 "created_at": l.created_at,
-                "verify_url": format!("/verify/{}", l.leaf_hash),
+                "verify_url": format!("/verify/{}/check", l.leaf_hash),
                 "proof_url": format!("/verify/{}/proof.json", l.leaf_hash),
                 "badge_url": format!("/badge/leaf/{}", l.leaf_hash),
             })
@@ -1092,7 +1160,7 @@ fn svg_badge(label: &str, value: &str, color: &str) -> String {
 }
 
 /// Dynamic SVG badge showing protocol status.
-/// Embed: ![ZAP1](https://pay.frontiercompute.io/badge/status.svg)
+/// Embed: ![ZAP1](https://api.frontiercompute.cash/badge/status.svg)
 async fn badge_status(
     State(state): State<AppState>,
 ) -> (
@@ -1612,7 +1680,7 @@ async fn create_lifecycle_event(
             "wallet_hash": req.wallet_hash,
             "leaf_hash": leaf.leaf_hash,
             "root_hash": root.root_hash,
-            "verify_url": format!("/verify/{}", leaf.leaf_hash),
+            "verify_url": format!("/verify/{}/check", leaf.leaf_hash),
         })),
     ))
 }
@@ -1649,7 +1717,7 @@ async fn lifecycle(
                 "anchor_txid": anchor.as_ref().and_then(|a| a.anchor_txid.as_deref()),
                 "anchor_height": anchor.as_ref().and_then(|a| a.anchor_height),
                 "anchored": anchor.is_some(),
-                "verify_url": format!("/verify/{}", leaf.leaf_hash),
+                "verify_url": format!("/verify/{}/check", leaf.leaf_hash),
             })
         })
         .collect();

@@ -22,6 +22,6 @@
     "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     "leaf_count": 2
   },
-  "verify_command": "python3 verify_proof.py --wallet-hash e2e_wallet_20260327 --serial Z15P-E2E-001 --proof proof.json --root 024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+  "verify_command": "python3 verify_proof.py conformance/invalid_bundle.json",
   "version": "1.0.0"
 }

@@ -32,6 +32,8 @@ struct ProofEntry {
     created_at: String,
     proof_steps: Vec<serde_json::Value>,
     root: String,
+    leaf_count: usize,
+    merkle_scheme: Option<String>,
     anchor_txid: Option<String>,
     anchor_height: Option<u32>,
     witness: serde_json::Value,
@@ -71,6 +73,8 @@ struct ApiProofStep {
 #[derive(Debug, Deserialize)]
 struct ApiRoot {
     hash: String,
+    leaf_count: usize,
+    scheme: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +206,8 @@ async fn main() -> Result<()> {
                 .map(|s| serde_json::json!({"hash": s.hash, "position": s.position}))
                 .collect(),
             root: bundle.root.hash,
+            leaf_count: bundle.root.leaf_count,
+            merkle_scheme: bundle.root.scheme,
             anchor_txid: bundle.anchor.txid,
             anchor_height: bundle.anchor.height,
             witness: serde_json::json!({

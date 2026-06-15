@@ -4,7 +4,10 @@ use zap1::memo::{
     hash_program_entry, hash_shield_renewal, hash_staking_deposit, hash_staking_reward,
     hash_staking_withdraw, hash_transfer, merkle_root_memo, MemoType, StructuredMemo,
 };
-use zap1::merkle::{compute_root, decode_hash, generate_proof};
+use zap1::merkle::{
+    commit_root, compute_legacy_root, compute_raw_tree_root, compute_root, decode_hash,
+    generate_proof,
+};
 
 #[test]
 fn memo_encode_decode_roundtrip() {
@@ -102,7 +105,8 @@ fn merkle_root_memo_encodes_raw_root() {
 fn merkle_root_single_leaf() {
     let leaf = hash_program_entry("wallet_a");
     let root = compute_root(&[leaf]);
-    assert_eq!(root, leaf);
+    assert_ne!(root, leaf);
+    assert_eq!(compute_raw_tree_root(&[leaf]), leaf);
 }
 
 #[test]
@@ -141,6 +145,30 @@ fn merkle_root_empty() {
 }
 
 #[test]
+fn merkle_root_binds_odd_leaf_count() {
+    let a = hash_program_entry("wallet_a");
+    let b = hash_program_entry("wallet_b");
+    let c = hash_program_entry("wallet_c");
+    let root_three = compute_root(&[a, b, c]);
+    let root_four = compute_root(&[a, b, c, c]);
+    assert_ne!(root_three, root_four);
+    assert_eq!(
+        compute_legacy_root(&[a, b, c]),
+        compute_legacy_root(&[a, b, c, c])
+    );
+}
+
+#[test]
+fn merkle_proof_odd_carry_skips_missing_sibling() {
+    let a = hash_program_entry("wallet_a");
+    let b = hash_program_entry("wallet_b");
+    let c = hash_program_entry("wallet_c");
+    let proof = generate_proof(&[a, b, c], 2);
+    assert_eq!(proof.len(), 1);
+    assert_eq!(proof[0].hash, hex::encode(compute_raw_tree_root(&[a, b])));
+}
+
+#[test]
 fn merkle_proof_single_leaf() {
     let leaf = hash_program_entry("wallet_a");
     let proof = generate_proof(&[leaf], 0);
@@ -170,7 +198,6 @@ fn merkle_proof_verifies_manually() {
     for i in 0..4 {
         let proof = generate_proof(&leaves, i);
         let mut current = leaves[i];
-        let mut idx = i;
         for step in &proof {
             let sibling = decode_hash(&step.hash).unwrap();
             let (left, right) = match step.position {
@@ -185,9 +212,12 @@ fn merkle_proof_verifies_manually() {
                 .personal(b"NordicShield_MRK")
                 .hash(&input);
             current.copy_from_slice(hash.as_bytes());
-            idx /= 2;
         }
-        assert_eq!(current, root, "Proof verification failed for leaf {i}");
+        assert_eq!(
+            commit_root(leaves.len(), &current),
+            root,
+            "Proof verification failed for leaf {i}"
+        );
     }
 }
 
@@ -373,7 +403,11 @@ fn merkle_proof_verifies_12_leaves() {
                 .hash(&input);
             current.copy_from_slice(hash.as_bytes());
         }
-        assert_eq!(current, root, "Proof failed for leaf {i} of 12");
+        assert_eq!(
+            commit_root(leaves.len(), &current),
+            root,
+            "Proof failed for leaf {i} of 12"
+        );
     }
 }
 

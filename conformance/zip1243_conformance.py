@@ -16,6 +16,7 @@ No external deps beyond python3 stdlib (hashlib.blake2b, json, struct).
 import argparse
 import json
 import os
+import re
 import struct
 import sys
 import urllib.request
@@ -29,6 +30,7 @@ REPO = os.path.dirname(DIR)
 # BLAKE2b personalization strings, padded to 16 bytes
 LEAF_PERSONAL = b"NordicShield_\x00\x00\x00"
 NODE_PERSONAL = b"NordicShield_MRK"
+ROOT_PERSONAL = b"NordicShield_RTK"
 
 # Valid deployed type range per ZIP 1243
 VALID_TYPE_MIN = 0x01
@@ -76,6 +78,15 @@ def node_hash(left, right):
     return blake2b(left + right, digest_size=32, person=NODE_PERSONAL).digest()
 
 
+def commit_root(leaf_count, raw_root):
+    """Count-bound ZAP1 Merkle root commitment."""
+    return blake2b(
+        b"\x01" + int(leaf_count).to_bytes(8, "big") + raw_root,
+        digest_size=32,
+        person=ROOT_PERSONAL,
+    ).digest()
+
+
 def len_prefix(s):
     """2-byte big-endian length prefix + UTF-8 bytes."""
     b = s.encode("utf-8")
@@ -91,23 +102,43 @@ def u64_be(val):
 
 
 def compute_merkle_root(leaves_hex):
-    """Compute Merkle root from leaf hashes (hex strings)."""
+    """Compute count-bound ZAP1 Merkle root from leaf hashes."""
     if not leaves_hex:
         return bytes(32)
     nodes = [bytes.fromhex(h) for h in leaves_hex]
-    if len(nodes) == 1:
-        return nodes[0]
+    raw = compute_raw_merkle_root(nodes)
+    return commit_root(len(nodes), raw)
+
+
+def compute_raw_merkle_root(nodes):
+    """Compute the raw tree root using odd-node carry-up semantics."""
+    nodes = list(nodes)
+    if not nodes:
+        return bytes(32)
     while len(nodes) > 1:
-        if len(nodes) % 2 == 1:
-            nodes.append(nodes[-1])
         next_level = []
         for i in range(0, len(nodes), 2):
-            next_level.append(node_hash(nodes[i], nodes[i + 1]))
+            if i + 1 < len(nodes):
+                next_level.append(node_hash(nodes[i], nodes[i + 1]))
+            else:
+                next_level.append(nodes[i])
         nodes = next_level
     return nodes[0]
 
 
-def verify_merkle_proof(leaf_hex, proof_path, expected_root_hex):
+def compute_legacy_merkle_root(leaves_hex):
+    """Historical odd-node duplication root retained for mainnet fixtures."""
+    if not leaves_hex:
+        return bytes(32)
+    nodes = [bytes.fromhex(h) for h in leaves_hex]
+    while len(nodes) > 1:
+        if len(nodes) % 2 == 1:
+            nodes.append(nodes[-1])
+        nodes = [node_hash(nodes[i], nodes[i + 1]) for i in range(0, len(nodes), 2)]
+    return nodes[0]
+
+
+def verify_merkle_proof(leaf_hex, proof_path, expected_root_hex, leaf_count=None):
     """Walk a Merkle proof path and check against expected root."""
     current = bytes.fromhex(leaf_hex)
     for step in proof_path:
@@ -116,6 +147,8 @@ def verify_merkle_proof(leaf_hex, proof_path, expected_root_hex):
             current = node_hash(current, sibling)
         else:
             current = node_hash(sibling, current)
+    if leaf_count is not None:
+        current = commit_root(leaf_count, current)
     return current.hex() == expected_root_hex
 
 
@@ -381,16 +414,16 @@ def test_section_3():
     # 3.2 Single leaf
     v = tree_vecs[1]
     root = compute_merkle_root(v["leaves"])
-    result("3.2", "Single-leaf tree root equals the leaf hash", root.hex() == v["expected_root"])
+    result("3.2", "Single-leaf tree root binds leaf count", root.hex() == v["expected_root"])
 
-    # 3.3 Two-leaf tree (mainnet)
+    # 3.3 Two-leaf tree
     v = tree_vecs[2]
     root = compute_merkle_root(v["leaves"])
     ok = root.hex() == v["expected_root"]
     detail = ""
     if not ok:
         detail = f"expected {v['expected_root'][:16]}... got {root.hex()[:16]}..."
-    result("3.3", "Two-leaf tree matches mainnet anchor root", ok, detail)
+    result("3.3", "Two-leaf tree binds leaf count", ok, detail)
 
     # 3.4 Node personalization is NordicShield_MRK
     result("3.4", "Node personalization is NordicShield_MRK (16 bytes)",
@@ -403,18 +436,19 @@ def test_section_3():
     expected = "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
     result("3.5", "Node hash H(left||right) matches two-leaf root", h.hex() == expected)
 
-    # 3.6 Odd-cardinality duplication
+    # 3.6 Odd-cardinality carry-up and count binding
     three_leaves = [
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
         "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
         "344a05bf81faf6e2d54a0e52ea0267aff0244998eb1ee27adf5627413e92f089",
     ]
     root_3 = compute_merkle_root(three_leaves)
-    # Manually compute to verify duplication
+    root_4 = compute_merkle_root(three_leaves + [three_leaves[-1]])
     n01 = node_hash(bytes.fromhex(three_leaves[0]), bytes.fromhex(three_leaves[1]))
-    n2dup = node_hash(bytes.fromhex(three_leaves[2]), bytes.fromhex(three_leaves[2]))
-    expected_3 = node_hash(n01, n2dup)
-    result("3.6", "Three-leaf tree duplicates final node at odd layer", root_3 == expected_3)
+    raw_3 = node_hash(n01, bytes.fromhex(three_leaves[2]))
+    expected_3 = commit_root(3, raw_3)
+    result("3.6", "Three-leaf tree carries final node and binds count", root_3 == expected_3)
+    result("3.6b", "Duplicating the final leaf changes the committed root", root_3 != root_4)
 
     # 3.7 Tree is append-only (insertion order matters)
     reversed_leaves = list(reversed(three_leaves[:2]))
@@ -439,7 +473,7 @@ def test_section_3():
 def test_section_4():
     print("\n== Section 4: Anchor Memo ==\n")
 
-    root_hex = "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+    root_hex = "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd"
 
     # 4.1 Anchor type is 0x09
     result("4.1", "Anchor event type is 0x09 (MERKLE_ROOT)", True)
@@ -454,8 +488,8 @@ def test_section_4():
     ok = parsed is not None and parsed[0] == "ZAP1" and parsed[1] == "09" and parsed[2] == root_hex
     result("4.3", "Anchor memo parses to (ZAP1, 09, root)", ok)
 
-    # 4.4 MERKLE_ROOT payload is raw root (no re-hashing)
-    result("4.4", "MERKLE_ROOT payload is the raw 32-byte root, not re-hashed",
+    # 4.4 MERKLE_ROOT payload is raw root commitment (no leaf re-hashing)
+    result("4.4", "MERKLE_ROOT payload is the raw 32-byte root commitment, not re-hashed",
            True, "type 0x09 is a protocol exception per spec")
 
     # 4.5 Legacy NSM1 prefix decodes
@@ -503,24 +537,25 @@ def test_section_5():
     proof_path = [
         {"hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b", "position": "left"}
     ]
-    root_hex = "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
-    ok = verify_merkle_proof(leaf_hex, proof_path, root_hex)
+    root_hex = "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd"
+    ok = verify_merkle_proof(leaf_hex, proof_path, root_hex, leaf_count=2)
     result("5.1", "Valid Merkle proof verifies", ok)
 
     # 5.2 Invalid proof (wrong root) fails
     bad_root = "ff" * 32
-    ok = not verify_merkle_proof(leaf_hex, proof_path, bad_root)
+    ok = not verify_merkle_proof(leaf_hex, proof_path, bad_root, leaf_count=2)
     result("5.2", "Proof against wrong root fails", ok)
 
     # 5.3 Invalid proof (wrong sibling) fails
     bad_proof = [{"hash": "aa" * 32, "position": "left"}]
-    ok = not verify_merkle_proof(leaf_hex, bad_proof, root_hex)
+    ok = not verify_merkle_proof(leaf_hex, bad_proof, root_hex, leaf_count=2)
     result("5.3", "Proof with wrong sibling fails", ok)
 
     # 5.4 Single-leaf proof (empty path)
     single_leaf = "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
-    ok = verify_merkle_proof(single_leaf, [], single_leaf)
-    result("5.4", "Single-leaf proof (empty path) verifies", ok)
+    single_root = "586a84be4d3a717f06a0b837e8dbb9a333a3c44a679338dfa29d422569cd1d8c"
+    ok = verify_merkle_proof(single_leaf, [], single_root, leaf_count=1)
+    result("5.4", "Single-leaf proof (empty path) verifies count-bound root", ok)
 
     # 5.5 Recompute leaf from fields and verify
     computed = hash_ownership_attest("e2e_wallet_20260327", "Z15P-E2E-001")
@@ -564,7 +599,12 @@ def test_section_5():
     ok = recomputed.hex() == bundle_leaf["hash"]
     result("5.10", "Bundle leaf hash matches recomputed hash", ok)
 
-    proof_ok = verify_merkle_proof(bundle_leaf["hash"], bundle["proof"], bundle["root"]["hash"])
+    proof_ok = verify_merkle_proof(
+        bundle_leaf["hash"],
+        bundle["proof"],
+        bundle["root"]["hash"],
+        leaf_count=bundle["root"]["leaf_count"],
+    )
     result("5.11", "Bundle proof path derives the stated root", proof_ok)
 
     # 5.12 Invalid bundle (tampered root) fails
@@ -572,7 +612,10 @@ def test_section_5():
     with open(inv_path) as f:
         inv_bundle = json.load(f)
     proof_fail = verify_merkle_proof(
-        inv_bundle["leaf"]["hash"], inv_bundle["proof"], inv_bundle["root"]["hash"]
+        inv_bundle["leaf"]["hash"],
+        inv_bundle["proof"],
+        inv_bundle["root"]["hash"],
+        leaf_count=inv_bundle["root"]["leaf_count"],
     )
     result("5.12", "Tampered bundle (wrong root) fails verification", not proof_fail)
 
@@ -591,10 +634,10 @@ def test_section_6(live=False):
     # 6.3 Recompute mainnet root from two known leaves
     leaf0 = hash_program_entry("e2e_wallet_20260327")
     leaf1 = hash_ownership_attest("e2e_wallet_20260327", "Z15P-E2E-001")
-    root = compute_merkle_root([leaf0.hex(), leaf1.hex()])
+    root = compute_legacy_merkle_root([leaf0.hex(), leaf1.hex()])
     expected = "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
     ok = root.hex() == expected
-    result("6.3", "Recomputed mainnet root from two leaves matches anchor", ok,
+    result("6.3", "Recomputed legacy mainnet root from two leaves matches anchor", ok,
            "" if ok else f"got {root.hex()[:24]}...")
 
     # 6.4 Memo for mainnet root
@@ -603,7 +646,7 @@ def test_section_6(live=False):
            memo == f"ZAP1:09:{expected}")
 
     if not live:
-        skip("6.5", "Live API test (pay.frontiercompute.io)", "use --live flag")
+        skip("6.5", "Live API test (api.frontiercompute.cash)", "use --live flag")
         skip("6.6", "Live API stats endpoint", "use --live flag")
         return
 
@@ -611,24 +654,34 @@ def test_section_6(live=False):
     print()
     print("  -- live API tests --")
 
-    api_base = "https://pay.frontiercompute.io"
+    api_base = "https://api.frontiercompute.cash"
 
-    # 6.5 Verify a known leaf against live API
+    # 6.5 Verify the deployment's current event against the live API.
+    # Fixture leaves are for deterministic conformance only; deployments may
+    # not expose old fixture proofs forever.
     try:
-        leaf_hash_hex = "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
-        url = f"{api_base}/verify/{leaf_hash_hex}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        events_url = f"{api_base}/events?limit=1"
+        headers = {"Accept": "application/json", "User-Agent": "zap1-zip1243-conformance/1.0"}
+        req = urllib.request.Request(events_url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            ok = data.get("leaf", {}).get("hash") == leaf_hash_hex
-            result("6.5", "Live API returns correct leaf for PROGRAM_ENTRY", ok)
+            events = json.loads(resp.read())
+        leaf_hash_hex = events.get("events", [{}])[0].get("leaf_hash", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", leaf_hash_hex):
+            result("6.5", "Live API exposes current leaf hash", False, leaf_hash_hex)
+        else:
+            url = f"{api_base}/verify/{leaf_hash_hex}/check"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            ok = data.get("valid") is True and data.get("protocol") == "ZAP1"
+            result("6.5", "Live API verifies current event leaf", ok)
     except Exception as e:
         skip("6.5", f"Live API verify endpoint", str(e)[:60])
 
     # 6.6 Stats endpoint responds
     try:
         url = f"{api_base}/stats"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
             ok = "leaf_count" in str(data).lower() or "leaves" in str(data).lower()
@@ -641,7 +694,7 @@ def main():
     global verbose
 
     parser = argparse.ArgumentParser(description="ZIP 1243 Conformance Test Suite")
-    parser.add_argument("--live", action="store_true", help="Run live API tests against pay.frontiercompute.io")
+    parser.add_argument("--live", action="store_true", help="Run live API tests against api.frontiercompute.cash")
     parser.add_argument("--verbose", action="store_true", help="Show computed hash details")
     args = parser.parse_args()
 

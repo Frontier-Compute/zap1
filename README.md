@@ -4,7 +4,9 @@
 
 Open-source attestation protocol for Zcash. Commits typed lifecycle events to a BLAKE2b Merkle tree and anchors roots on-chain via shielded memos. Any Zcash-native operator can use it.
 
-2 mainnet anchors. 13 leaves. 9 event types tracked. 118 tests. 60 automated checks. MIT licensed. Live stats: https://api.frontiercompute.cash/stats
+MIT licensed. Live deployment state changes over time; verify current counts,
+scanner state, and anchor posture through the public API:
+https://api.frontiercompute.cash/stats
 
 [ZIP draft PR #1243](https://github.com/zcash/zips/pull/1243) | [QUICKSTART](QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
 
@@ -17,7 +19,9 @@ git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash script
 ## What it does
 
 - **Structured attestation**: typed lifecycle events (entry, ownership, deployment, payment, transfer, exit) committed to a BLAKE2b Merkle tree with configurable domain separation
-- **Shielded anchoring**: Merkle roots broadcast to Zcash mainnet via Orchard shielded memos. Proofs are publicly verifiable, event data stays private.
+- **Shielded anchoring**: Merkle roots can be broadcast to Zcash mainnet via
+  Orchard shielded memos. Proofs are publicly verifiable, event data stays
+  private. Current anchor freshness is reported by `/anchor/status`.
 - **Verification**: standalone SDK on [crates.io](https://crates.io/crates/zap1-verify), browser verifier, offline audit tools. No server trust required.
 - **Ecosystem tooling**: universal [memo decoder](https://crates.io/crates/zcash-memo-decode), [ZIP 302 TVLV reference](src/bin/zip302_tvlv.rs), Zaino compact block [adapter](src/bin/zaino_adapter.rs), [selective disclosure export](src/bin/zap1_export.rs)
 
@@ -47,18 +51,21 @@ Nine event types are tracked in ZAP1:
 
 All hashes use BLAKE2b-256 with `NordicShield_` personalization. Merkle nodes use `NordicShield_MRK`. Full spec: [ONCHAIN_PROTOCOL.md](ONCHAIN_PROTOCOL.md).
 
-## Mainnet proof anchor
+## Mainnet Anchor History
 
-Anchored on Zcash mainnet block **3,301,151**. Live stats: https://api.frontiercompute.cash/stats.
+The live deployment has historical Zcash mainnet anchors. Do not rely on this
+README for current counts, latest root, or freshness; use the API:
 
-- Anchor txid: `98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a`
-- Root: `024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
-- Details: [E2E_PROOF_20260327.md](E2E_PROOF_20260327.md)
+- Anchor status: https://api.frontiercompute.cash/anchor/status
+- Anchor history: https://api.frontiercompute.cash/anchor/history
+- Live stats: https://api.frontiercompute.cash/stats
+
+Historical proof material is documented in [E2E_PROOF_20260327.md](E2E_PROOF_20260327.md).
 
 ## Stack
 
 - **Rust** (axum, rusqlite, zcash_client_backend, blake2b_simd, qrcode)
-- **Zebra 4.3.0** for RPC (getblock, getrawtransaction, getrawmempool)
+- **Zebra RPC** for chain reads (getblock, getrawtransaction, getrawmempool)
 - **SQLite** for invoices, Merkle leaves, Merkle roots, payment records
 - **Docker** for deployment
 
@@ -76,10 +83,10 @@ docker compose -f docker-compose.mainnet.yml up -d
 Runnable scripts in `examples/`. No install needed beyond curl + python3.
 
 ```bash
-bash examples/quickstart.sh                     # protocol tour in 60 seconds
+python3 examples/verify_proof.py                # offline proof verification, no server trust
+python3 examples/verify_onchain.py              # offline Merkle check + optional Zebra memo check
+bash examples/quickstart.sh                     # protocol tour with local proof verification
 bash examples/governance_demo.sh YOUR_API_KEY    # full governance cycle
-python3 examples/verify_proof.py LEAF_HASH       # fetch and display a proof
-python3 examples/verify_onchain.py proof.json    # independent Merkle + chain verification
 python3 examples/conformance_check.py URL        # validate any ZAP1 instance (19 checks)
 bash examples/validate_instance.sh URL           # instance health check (10 checks)
 bash examples/create_event.sh YOUR_API_KEY       # create an event
@@ -131,9 +138,8 @@ Consumer examples in `examples/`: wallet (Python), explorer (Python), indexer (b
 | /health | GET | scanner and node status |
 | /anchor/history | GET | all anchored roots |
 | /anchor/status | GET | current tree state |
-| /verify/{hash} | GET | proof page |
-| /verify/{hash}/check | GET | server-side verification |
-| /verify/{hash}/proof.json | GET | downloadable proof bundle |
+| /verify/{hash}/check | GET | deployment server-side verification, when exposed for that leaf |
+| /verify/{hash}/proof.json | GET | downloadable proof bundle, when exposed for that leaf |
 | /memo/decode | POST | universal memo classifier |
 | /lifecycle/{wallet_hash} | GET | events for a wallet |
 
@@ -141,11 +147,14 @@ Interactive docs: [frontiercompute.cash/api.html](https://frontiercompute.cash/a
 OpenAPI spec: [conformance/openapi.yaml](conformance/openapi.yaml)
 Reference clients: [Python](conformance/clients/zap1_client.py) | [TypeScript](conformance/clients/zap1_client.ts)
 
+Offline proof verification does not require a hosted `/verify` endpoint:
+`python3 examples/verify_proof.py examples/proof_bundle_example.json`.
+
 ## Conformance
 
 ```bash
-python3 conformance/check.py        # 14 protocol checks
-python3 conformance/check_api.py     # 21 API schema checks
+python3 conformance/check.py        # protocol fixture checks
+python3 conformance/check_api.py     # live API schema checks
 python3 scripts/check_compatibility.py  # 6 hash vectors
 bash scripts/check.sh             # 14 end-to-end checks
 ```
@@ -156,8 +165,7 @@ See [conformance/](conformance/) for fixtures, schemas, versioning policy, and c
 
 - **Verification SDK (Rust + WASM):** [Frontier-Compute/zap1-verify](https://github.com/Frontier-Compute/zap1-verify) - 22 tests
 - **JS/TS SDK:** [Frontier-Compute/zap1-js](https://github.com/Frontier-Compute/zap1-js) - 19 tests
-- **Attestation explorer:** [explorer.frontiercompute.io](https://explorer.frontiercompute.io)
-- **Lifecycle simulator:** [simulator.frontiercompute.io](https://simulator.frontiercompute.io)
+- **Public API:** [api.frontiercompute.cash](https://api.frontiercompute.cash/protocol/info)
 - **Browser verifier:** [frontiercompute.cash/verify.html](https://frontiercompute.cash/verify.html)
 - **Universal memo decoder:** [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode) - 23 tests, zero deps
 - **Browser memo decoder:** [frontiercompute.cash/memo.html](https://frontiercompute.cash/memo.html)

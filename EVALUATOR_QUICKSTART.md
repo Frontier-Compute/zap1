@@ -10,13 +10,17 @@ cd zap1
 bash scripts/evaluate.sh
 ```
 
-This runs the live validation path against the public stack and forwards to `scripts/check.sh`.
+This runs the validation path and forwards to `scripts/check.sh`. The proof
+verification step is offline-first; live API reads are used for current
+status/freshness.
 
 ## What it proves
 
 - the live API is reachable and reports `protocol: ZAP1`
 - anchored roots and leaves exist on mainnet
-- a live proof verifies
+- bundled proof material verifies without trusting a server
+- current live proof routing is checked when the deployment exposes it for the
+  latest leaf
 - memo decode returns `zap1` for a known attestation
 - explorer and simulator are reachable
 - published crates are live
@@ -24,11 +28,12 @@ This runs the live validation path against the public stack and forwards to `scr
 
 ## Manual surfaces
 
-- Live protocol info: `https://pay.frontiercompute.io/protocol/info`
-- Live stats: `https://pay.frontiercompute.io/stats`
-- Anchor history: `https://pay.frontiercompute.io/anchor/history`
-- Proof page: `https://pay.frontiercompute.io/verify/075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b`
-- Proof JSON: `https://pay.frontiercompute.io/verify/075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b/proof.json`
+- Live protocol info: `https://api.frontiercompute.cash/protocol/info`
+- Live stats: `https://api.frontiercompute.cash/stats`
+- Anchor status: `https://api.frontiercompute.cash/anchor/status`
+- Anchor history: `https://api.frontiercompute.cash/anchor/history`
+- Offline proof check: `python3 examples/verify_proof.py`
+- Optional live freshness check: `python3 examples/verify_proof.py --live-status`
 - Browser verifier: `https://frontiercompute.io/verify.html`
 
 ## Supporting docs

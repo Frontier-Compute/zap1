@@ -148,14 +148,21 @@ ZAP1 validation check
 pass  protocol/info returns ZAP1
 pass  mainnet anchors > 0
 pass  mainnet leaves > 0
-pass  live proof verifies
+pass  offline proof bundle verifies
 pass  memo decode returns zap1
-pass  explorer reachable
-pass  simulator reachable
+skip  explorer reachable (optional web surface HTTP 000000)
+skip  simulator reachable (optional web surface HTTP 000000)
 pass  zap1-verify on crates.io
 pass  events feed returns data
+pass  current live proof endpoint verifies
 pass  zcash-memo-decode on crates.io
-pass  cargo test passes
+pass  ZIP-1243 conformance vectors
+pass  live API schema check
+pass  cargo metadata locked
+pass  zap1-verify tests pass
+pass  zcash-memo-decode tests pass
+
+14 pass, 0 fail
 ```
 
 ## Repository State

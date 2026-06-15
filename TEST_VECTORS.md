@@ -144,7 +144,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       },
       "expected_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
       "hash_function_used": "raw 32-byte Merkle root payload (no additional BLAKE2b leaf hashing for type 0x09)",
-      "construction_rule": "MERKLE_ROOT = current_root"
+      "construction_rule": "MERKLE_ROOT = current count-bound Merkle root commitment"
     },
     {
       "event_type": "STAKING_DEPOSIT",
@@ -232,23 +232,24 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "source": "conformance/tree_vectors.json"
     },
     {
-      "description": "single leaf - root equals the leaf hash",
+      "description": "single leaf - root binds leaf count",
       "leaves": [
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
       ],
-      "expected_root": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-      "note": "no internal node hashing needed for a single leaf",
+      "expected_root": "586a84be4d3a717f06a0b837e8dbb9a333a3c44a679338dfa29d422569cd1d8c",
+      "note": "raw tree root is the leaf; committed root binds leaf_count=1 with NordicShield_RTK",
       "source": "conformance/tree_vectors.json"
     },
     {
-      "description": "two-leaf tree from mainnet anchor at block 3,286,631",
+      "description": "two-leaf tree - root binds leaf count",
       "leaves": [
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
         "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
       ],
-      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
       "node_hash_function": "BLAKE2b-256 with NordicShield_MRK personalization",
-      "construction_rule": "BLAKE2b_32(leaf[0] || leaf[1])",
+      "root_hash_function": "BLAKE2b-256 with NordicShield_RTK personalization",
+      "construction_rule": "raw_root = BLAKE2b_32(leaf[0] || leaf[1]); root = BLAKE2b_32(0x01 || 2_be || raw_root)",
       "source": "conformance/tree_vectors.json, conformance/hash_vectors.json"
     }
   ],
@@ -267,10 +268,10 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "description": "MERKLE_ROOT memo wire format",
       "event_type": "MERKLE_ROOT",
       "type_byte": "0x09",
-      "payload_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-      "expected_memo_string": "ZAP1:09:024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "payload_hash": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "expected_memo_string": "ZAP1:09:94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
       "expected_byte_length": 73,
-      "note": "MERKLE_ROOT payload is the raw root, not a second hash"
+      "note": "MERKLE_ROOT payload is the raw 32-byte root commitment, not a second leaf hash"
     },
     {
       "description": "legacy NSM1 prefix - accepted during decode",
@@ -291,7 +292,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 - All hash values in this document are verified against `conformance/hash_vectors.json`, `conformance/tree_vectors.json`, and `tests/memo_merkle_test.rs`. No values are fabricated.
 - The sample values are deterministic and can be recomputed with the hash functions in `verify_proof.py` or `src/memo.rs`.
 - Any implementation can use these vectors to confirm leaf construction matches ZAP1.
-- `MERKLE_ROOT` (0x09) is included because it is one of the twelve ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`. The payload is the raw 32-byte root.
+- `MERKLE_ROOT` (0x09) is included because it is one of the twelve ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`. The payload is the raw 32-byte root commitment.
 - `STAKING_DEPOSIT` (0x0A), `STAKING_WITHDRAW` (0x0B), and `STAKING_REWARD` (0x0C) are reserved for Crosslink. No hash functions are implemented in the reference codebase. Their construction rules are preliminary. Concrete test vectors will be added when these types activate.
-- Merkle tree vectors use `NordicShield_MRK` personalization for internal node hashing. Odd-layer duplication: if a layer has an odd number of nodes, the final node is duplicated before pairing.
+- Merkle tree vectors use `NordicShield_MRK` personalization for internal node hashing and `NordicShield_RTK` for root commitments. Odd-layer carry-up: if a layer has an odd number of nodes, the final node carries up unchanged; the committed root binds `leaf_count`.
 - Memo encoding vectors cover the `ZAP1:{type_hex}:{payload_hex}` wire format (73 ASCII bytes) and the legacy `NSM1` prefix accepted during decode.

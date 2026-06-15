@@ -39,13 +39,21 @@ def check(label, ok, detail=""):
 API_KEY = os.environ.get("ZAP1_ADMIN_API_KEY", "")
 
 
+def request_headers(headers=None, *, accept_json=False, content_type=None):
+    merged = {"User-Agent": USER_AGENT}
+    if accept_json:
+        merged["Accept"] = "application/json"
+    if content_type:
+        merged["Content-Type"] = content_type
+    merged.update(headers or {})
+    return merged
+
+
 def fetch(path, headers=None):
     url = f"{BASE}{path}"
     for attempt in range(1, API_RETRIES + 1):
         try:
-            request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-            request_headers.update(headers or {})
-            req = urllib.request.Request(url, headers=request_headers)
+            req = urllib.request.Request(url, headers=request_headers(headers, accept_json=True))
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return json.load(resp)
         except Exception:
@@ -58,9 +66,7 @@ def fetch_raw(path, headers=None, method="GET"):
     url = f"{BASE}{path}"
     for attempt in range(1, API_RETRIES + 1):
         try:
-            request_headers = {"User-Agent": USER_AGENT}
-            request_headers.update(headers or {})
-            req = urllib.request.Request(url, headers=request_headers, method=method)
+            req = urllib.request.Request(url, headers=request_headers(headers), method=method)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return resp.status, resp.read().decode(), resp.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:
@@ -166,7 +172,10 @@ def main():
         req = urllib.request.Request(
             f"{BASE}/memo/decode",
             data=hex_body.encode(),
-            headers={"User-Agent": USER_AGENT},
+            headers=request_headers(
+                accept_json=True,
+                content_type="text/plain; charset=utf-8",
+            ),
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10) as resp:

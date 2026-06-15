@@ -12,6 +12,7 @@ MAX_ANCHOR_AGE_HOURS = int(os.environ.get("ZAP1_MAX_ANCHOR_AGE_HOURS", "72"))
 USER_AGENT = os.environ.get("ZAP1_USER_AGENT", "zap1-anchor-liveness/1.0")
 API_RETRIES = int(os.environ.get("ZAP1_API_RETRIES", "3"))
 API_RETRY_DELAY_SECONDS = float(os.environ.get("ZAP1_API_RETRY_DELAY_SECONDS", "1"))
+JSON_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 
 
 def env_flag(name: str, default: bool) -> bool:
@@ -30,7 +31,7 @@ def fetch(path: str):
         try:
             req = urllib.request.Request(
                 f"{BASE}{path}",
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                headers=JSON_HEADERS,
             )
             with urllib.request.urlopen(req, timeout=20) as resp:
                 try:

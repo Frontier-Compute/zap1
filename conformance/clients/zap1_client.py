@@ -9,7 +9,7 @@ from typing import Optional
 
 
 class Zap1Client:
-    def __init__(self, base_url: str = "https://pay.frontiercompute.io"):
+    def __init__(self, base_url: str = "https://api.frontiercompute.cash"):
         self.base_url = base_url.rstrip("/")
 
     def _get(self, path: str) -> dict:

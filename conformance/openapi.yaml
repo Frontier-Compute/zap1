@@ -11,7 +11,7 @@ info:
     url: https://github.com/Frontier-Compute/zap1
 
 servers:
-  - url: https://pay.frontiercompute.io
+  - url: https://api.frontiercompute.cash
     description: Reference deployment on Zcash mainnet
 
 paths:

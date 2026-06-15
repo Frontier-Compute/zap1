@@ -27,7 +27,7 @@ class Zap1MemoFormatterTest {
         assertNotNull(att)
         assertEquals("MERKLE_ROOT", att!!.event)
         assertEquals("Merkle root anchored", att.label)
-        assertTrue(att.verifyUrl.startsWith("https://pay.frontiercompute.io/verify/"))
+        assertTrue(att.verifyUrl.startsWith("https://api.frontiercompute.cash/verify/"))
     }
 
     @Test

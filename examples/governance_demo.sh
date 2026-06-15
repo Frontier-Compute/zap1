@@ -5,7 +5,7 @@ set -euo pipefail
 # Shows the full cycle: propose -> vote -> tally -> verify.
 # Runs against the live API. Takes an API key as argument.
 
-API="https://pay.frontiercompute.io"
+API="${ZAP1_API_BASE:-https://api.frontiercompute.cash}"
 KEY="${1:?Usage: $0 <api_key>}"
 GREEN='\033[0;32m'
 GOLD='\033[0;33m'

@@ -9,7 +9,7 @@ After trial decryption, the wallet checks memo format and enriches the UI.
 import json
 import urllib.request
 
-API = "https://pay.frontiercompute.io"
+API = "https://api.frontiercompute.cash"
 
 
 def classify_memo(hex_bytes: str) -> dict:

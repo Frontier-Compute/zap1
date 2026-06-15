@@ -487,13 +487,13 @@ async fn check_onboard_completions(config: &Config, db: &Db) -> anyhow::Result<(
                 &leaf.leaf_hash[leaf.leaf_hash.len().saturating_sub(8)..]
             ));
             msg.push_str(&format!(
-                "\nVerify: https://pay.frontiercompute.io/verify/{}/check",
+                "\nVerify: https://api.frontiercompute.cash/verify/{}/check",
                 leaf.leaf_hash
             ));
         }
 
         msg.push_str(&format!(
-            "\n\nDashboard: https://pay.frontiercompute.io/miner/{}\n\n\
+            "\n\nDashboard: https://api.frontiercompute.cash/miner/{}\n\n\
              Type 'dashboard' anytime for your status.",
             wallet_hash
         ));

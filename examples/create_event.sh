@@ -3,7 +3,7 @@
 # Usage: ./create_event.sh <api_key>
 # Requires: curl, jq (optional)
 set -euo pipefail
-API="https://pay.frontiercompute.io"
+API="${ZAP1_API_BASE:-https://api.frontiercompute.cash}"
 KEY="${1:?Usage: $0 <api_key>}"
 curl -s -X POST "$API/event" \
   -H "Authorization: Bearer $KEY" \

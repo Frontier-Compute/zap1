@@ -5,7 +5,7 @@
  * Zero dependencies - uses native fetch.
  *
  * Usage:
- *   const zap1 = new CrossPayAttestation("https://pay.frontiercompute.io", API_KEY);
+ *   const zap1 = new CrossPayAttestation("https://api.frontiercompute.cash", API_KEY);
  *   const receipt = await zap1.attest(swapResult);
  *
  * Protocol: https://github.com/Frontier-Compute/zap1/blob/main/ONCHAIN_PROTOCOL.md

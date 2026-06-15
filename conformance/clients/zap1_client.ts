@@ -4,7 +4,7 @@
  * Zero dependencies. Works with any ZAP1-compatible server.
  */
 
-const DEFAULT_BASE = "https://pay.frontiercompute.io";
+const DEFAULT_BASE = "https://api.frontiercompute.cash";
 
 export class Zap1Client {
   private base: string;

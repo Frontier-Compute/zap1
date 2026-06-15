@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-API="${1:-https://pay.frontiercompute.io}"
+API="${1:-${ZAP1_API_BASE:-https://api.frontiercompute.cash}}"
 
 echo "ZAP1 indexer consumer"
 echo "api: $API"

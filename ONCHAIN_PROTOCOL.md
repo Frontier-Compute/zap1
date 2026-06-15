@@ -17,6 +17,7 @@ Mainnet proof reference:
 - first anchor txid: `98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a`
 - block height: `3,286,631`
 - anchored root: `024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
+- scheme: `ZAP1_LEGACY_DUPLICATE_ODD` (historical anchor; current roots use count-bound commitments)
 
 ## 2. Memo Protocol
 
@@ -53,7 +54,7 @@ Transaction types:
 | `0x06` | `SHIELD_RENEWAL` | `hash(wallet_hash || year)` | Active |
 | `0x07` | `TRANSFER` | `hash(old_wallet || new_wallet || serial_number)` | Active |
 | `0x08` | `EXIT` | `hash(wallet_hash || serial_number || timestamp)` | Active |
-| `0x09` | `MERKLE_ROOT` | raw 32-byte Merkle root | Active |
+| `0x09` | `MERKLE_ROOT` | raw 32-byte Merkle root commitment | Active |
 | `0x0A` | `STAKING_DEPOSIT` | `hash(wallet_hash || amount_zat_be || validator_id)` | Reserved for Crosslink |
 | `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be)` | Reserved for Crosslink |
 | `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || epoch_be || reward_zat_be)` | Reserved for Crosslink |
@@ -79,7 +80,7 @@ HOSTING_PAYMENT    = BLAKE2b_32(0x05 || len(serial_number) || serial_number || m
 SHIELD_RENEWAL     = BLAKE2b_32(0x06 || len(wallet_hash) || wallet_hash || year_be)
 TRANSFER           = BLAKE2b_32(0x07 || len(old_wallet) || old_wallet || len(new_wallet) || new_wallet || len(serial_number) || serial_number)
 EXIT               = BLAKE2b_32(0x08 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number || timestamp_be)
-MERKLE_ROOT        = current_root
+MERKLE_ROOT        = current count-bound Merkle root commitment
 STAKING_DEPOSIT    = BLAKE2b_32(0x0A || wallet_hash || amount_zat_be || validator_id)
 STAKING_WITHDRAW   = BLAKE2b_32(0x0B || wallet_hash || amount_zat_be)
 STAKING_REWARD     = BLAKE2b_32(0x0C || wallet_hash || epoch_be || reward_zat_be)
@@ -105,16 +106,19 @@ Rules:
 - the tree only grows; leaves are never deleted or rewritten
 - parent nodes are computed as `BLAKE2b_32(left || right)`
 - node hashing uses the personalization `NordicShield_MRK`
-- if a layer has an odd leaf count, the final node is duplicated
-- the current root is recomputed after each insertion
+- if a layer has an odd node count, the final node carries up unchanged
+- the raw tree root is committed as `BLAKE2b_32(0x01 || leaf_count_be_u64 || raw_tree_root)`
+- root commitment hashing uses the personalization `NordicShield_RTK`
+- the current committed root is recomputed after each insertion
 - root history is preserved so older proofs remain tied to a specific anchor
+- historical anchors produced before count binding used odd-node duplication and are verified only under `ZAP1_LEGACY_DUPLICATE_ODD`
 
 Persistence model:
 
 - `merkle_leaves`: leaf hash, event type, wallet hash, serial number, created time
 - `merkle_roots`: root hash, leaf count, anchor txid, anchor height, created time
 
-An inclusion proof consists of the leaf hash, ordered sibling hashes, sibling positions, the derived root, and the anchor transaction reference for that root.
+An inclusion proof consists of the leaf hash, ordered sibling hashes, sibling positions, leaf count, the derived root commitment, and the anchor transaction reference for that root.
 
 ## 5. On-Chain Anchoring
 
@@ -123,7 +127,7 @@ The current Merkle root is periodically committed to Zcash in a shielded transac
 Anchor rules:
 
 - memo type is always `0x09`
-- payload is the 32-byte current Merkle root
+- payload is the 32-byte current Merkle root commitment
 - send path uses `zingo-cli`
 - anchor cadence is every 10 events or every 24 hours, whichever comes first
 - the resulting txid and mined block height are recorded with the root
@@ -142,11 +146,11 @@ The txid is part of the proof bundle. A verifier checks the memo in the mined tr
 
 Participant verification flow:
 
-1. Open `pay.frontiercompute.io/verify/{leaf_hash}`.
+1. Open `api.frontiercompute.cash/verify/{leaf_hash}`.
 2. Read the displayed leaf hash, Merkle proof path, root, anchor txid, and block height.
 3. Recompute the event leaf from the participant wallet hash and, where applicable, the serial number.
-4. Walk the proof path to recompute the root.
-5. Confirm the derived root equals the displayed root.
+4. Walk the proof path to recompute the raw tree root.
+5. Commit `leaf_count` and the raw tree root with `NordicShield_RTK`, then confirm the derived root commitment equals the displayed root.
 6. Open the anchor txid in a Zcash explorer or with local node tooling.
 7. Confirm the memo contains the matching `ZAP1:09` root commitment.
 8. Confirm the transaction is mined at the stated block height on Zcash mainnet.

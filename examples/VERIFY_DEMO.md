@@ -28,7 +28,7 @@ Each proof walks from the leaf hash to the anchored root using BLAKE2b-256 with 
 
 Confirm the anchor transaction exists:
 ```bash
-curl -s https://pay.frontiercompute.io/anchor/history | python3 -m json.tool
+curl -s https://api.frontiercompute.cash/anchor/history | python3 -m json.tool
 ```
 
 Look for block 3,286,631 with root `024e3651...`.
@@ -36,7 +36,7 @@ Look for block 3,286,631 with root `024e3651...`.
 ## Create your own export
 
 ```bash
-cargo run --bin zap1_export -- --api-url https://pay.frontiercompute.io --wallet-hash <hash> --profile auditor
+cargo run --bin zap1_export -- --api-url https://api.frontiercompute.cash --wallet-hash <hash> --profile auditor
 ```
 
 Profiles: `auditor`, `counterparty`, `member`, `regulator`.

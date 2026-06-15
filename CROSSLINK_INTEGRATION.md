@@ -118,4 +118,4 @@ The `zap1-verify` crate walks the Merkle proof path from leaf to root and confir
 
 ## Timeline
 
-The staking event types are implemented and available in the API now. They can be tested against the live stack at pay.frontiercompute.io. When Crosslink launches, validators can start attesting immediately - no protocol changes needed.
+The staking event types are implemented and available in the API now. They can be tested against the live stack at api.frontiercompute.cash. When Crosslink launches, validators can start attesting immediately - no protocol changes needed.

@@ -44,7 +44,11 @@ For cases where the amount SHOULD be revealed (e.g., tax reporting, loan underwr
 4. Verifier now knows the exact inputs, confirmed by the on-chain anchor
 ```
 
-This is opt-in. The holder chooses what to reveal. The on-chain commitment guarantees the disclosed values are authentic.
+This is opt-in. The holder chooses what to reveal. The on-chain commitment lets
+the verifier check that the disclosed values match the committed leaf and the
+anchored root. It does not, by itself, prove the off-chain truth of those values;
+that still depends on the verifier's policy and any external evidence they
+require.
 
 ## Cross-Chain Revenue Proof
 

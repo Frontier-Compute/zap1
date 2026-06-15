@@ -10,7 +10,7 @@ When an autonomous agent operates through an Orchard shielded wallet, its financ
 
 There is no standard way for an autonomous agent to:
 - Commit to a policy before acting
-- Prove it followed that policy after acting
+- Leave checkable evidence for disclosed actions after acting
 - Build a verifiable track record from shielded operations
 - Present behavioral credentials to external systems
 
@@ -18,7 +18,8 @@ There is no standard way for an autonomous agent to:
 
 ZAP1 attestation events for agent lifecycle operations. The same hash-and-Merkle-and-anchor mechanism used for lifecycle events, governance, ZSA attestation, and mining pool operations. No protocol changes. No new cryptographic primitives. Event types in the 0x40-0x4F range following the existing pattern.
 
-The agent's wallet stays shielded. The attestation layer proves what the agent did without revealing what it spent.
+The agent's wallet stays shielded. The attestation layer commits bounded claims
+about what the agent did without revealing what it spent.
 
 ## Architecture
 
@@ -43,10 +44,15 @@ The wallet and the attestation layer are independent. The wallet handles value. 
 
 An agent commits its decision rules before acting. The policy is a set of constraints: spending limits, approved counterparty hashes, model version, action whitelist. The hash of the policy is committed to the Merkle tree via AGENT_POLICY.
 
-After the agent acts, anyone with the policy preimage can verify:
+After the agent acts, anyone with the policy preimage and disclosed action
+preimages can verify:
 1. The committed policy hash matches the disclosed rules
-2. The agent's actions (AGENT_ACTION, AGENT_PAYMENT, AGENT_DECISION) are consistent with the rules
-3. Any divergence between committed policy and observed behavior is provable
+2. The disclosed action receipts (AGENT_ACTION, AGENT_PAYMENT, AGENT_DECISION) are consistent with the rules
+3. Any divergence between disclosed receipts and committed policy can be checked
+
+ZAP1 inclusion proofs do not prove that every real-world action was captured, and
+they do not prove model or agent correctness. They prove that specific disclosed
+claims match committed leaves under an anchored root.
 
 This is structurally the same pattern as policy commitment in shielded voting systems, where a vote weight and choice are committed before the tally. The domain differs (agent behavior vs governance) but the commitment model is identical.
 
@@ -106,7 +112,9 @@ Fields:
 
 Agent attestation follows the same selective disclosure model as revenue proofs (see REVENUE_PROOFS.md).
 
-An agent proves "I took action X at time Y" by presenting the leaf hash, proof path, and anchor reference. The verifier confirms inclusion in the Merkle tree without learning:
+An agent supports the claim "I took action X at time Y" by presenting the leaf
+hash, proof path, and anchor reference. The verifier confirms inclusion in the
+Merkle tree without learning:
 - What the agent spent
 - Who the agent transacted with
 - What model weights were used

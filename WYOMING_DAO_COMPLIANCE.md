@@ -25,8 +25,8 @@ The on-chain anchor history provides:
 
 ## Verification
 
-1. Check the anchor history: `https://pay.frontiercompute.io/anchor/history`
-2. Verify a specific proof: `https://pay.frontiercompute.io/verify/{leaf_hash}/check`
+1. Check the anchor history: `https://api.frontiercompute.cash/anchor/history`
+2. Verify a specific proof: `https://api.frontiercompute.cash/verify/{leaf_hash}/check`
 3. Confirm the anchor transaction on any Zcash explorer using the txid
 4. Use `verify_proof.py` from the [zap1 repo](https://github.com/Frontier-Compute/zap1) for independent verification
 

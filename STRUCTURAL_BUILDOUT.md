@@ -19,7 +19,7 @@ cargo run --bin zap1_audit -- --bundle examples/live_ownership_attest_proof.json
 Or against a live proof bundle URL:
 
 ```bash
-cargo run --bin zap1_audit -- --bundle-url https://pay.frontiercompute.io/verify/<leaf_hash>/proof.json
+cargo run --bin zap1_audit -- --bundle-url https://api.frontiercompute.cash/verify/<leaf_hash>/proof.json
 ```
 
 ## 2. `zip302_tvlv`

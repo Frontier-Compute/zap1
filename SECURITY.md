@@ -12,7 +12,7 @@ If GitHub Private Vulnerability Reporting is unavailable, use the private Signal
 
 - zap1 reference implementation and attestation engine
 - Merkle tree and anchoring logic
-- API endpoints at `pay.frontiercompute.io`
+- API endpoints at `api.frontiercompute.cash`
 - Verification surfaces, including the verify page, proof bundles, and `verify_proof.py`
 
 ## Response

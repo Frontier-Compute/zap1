@@ -16,7 +16,7 @@ bash scripts/check.sh
 
 Open:
 
-`https://pay.frontiercompute.io/protocol/info`
+`https://api.frontiercompute.cash/protocol/info`
 
 Confirms:
 
@@ -30,7 +30,7 @@ Confirms:
 
 Open:
 
-`https://pay.frontiercompute.io/stats`
+`https://api.frontiercompute.cash/stats`
 
 Confirms:
 
@@ -43,7 +43,7 @@ Confirms:
 
 Open:
 
-`https://pay.frontiercompute.io/anchor/history`
+`https://api.frontiercompute.cash/anchor/history`
 
 Human-readable view:
 
@@ -56,42 +56,50 @@ Confirms:
 - block heights
 - leaf-count growth over time
 
-## 4. Live proof page
+## 4. Offline proof verification
 
-Open:
+Run:
 
-`https://pay.frontiercompute.io/verify/075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b`
+```bash
+python3 examples/verify_proof.py examples/proof_bundle_example.json
+```
 
 Confirms:
 
 - leaf hash
 - proof path
 - root
-- anchor txid
-- block height
+- bundled anchor reference, if present
+- no hosted `/verify` endpoint is required
 
-## 5. Server-side verification
+## 5. Optional live proof fetch
 
-Open:
+If the live deployment exposes a proof bundle for a current leaf, fetch it
+explicitly:
 
-`https://pay.frontiercompute.io/verify/075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b/check`
-
-Confirms:
-
-- `valid: true`
-- proof can be verified independently by the server
-- verification is performed with `zap1-verify`
-
-## 6. Proof bundle download
-
-Open:
-
-`https://pay.frontiercompute.io/verify/075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b/proof.json`
+```bash
+LEAF=$(curl -sf https://api.frontiercompute.cash/events?limit=1 | python3 -c "import json,sys; print(json.load(sys.stdin)['events'][0]['leaf_hash'])")
+python3 examples/verify_proof.py "$LEAF" --api-base https://api.frontiercompute.cash
+```
 
 Confirms:
 
-- bundle format is downloadable
-- proof data can be reused outside the hosted site
+- current proof route is exposed for that leaf
+- the fetched bundle still verifies offline after download
+
+## 6. Optional on-chain memo check
+
+With a local Zebra RPC, check the anchor transaction memo when the proof bundle
+has a txid:
+
+```bash
+python3 examples/verify_onchain.py examples/proof_bundle_example.json --rpc http://127.0.0.1:8232
+```
+
+Confirms:
+
+- Merkle proof resolves to the claimed root
+- anchor memo matches when the local chain reader can decrypt/extract it
 
 ## 7. Reference implementation
 
@@ -163,9 +171,9 @@ Confirms:
 ```bash
 git clone https://github.com/Frontier-Compute/zap1.git
 cd zap1
-cargo run --bin zap1_ops -- --base-url https://pay.frontiercompute.io --json
+cargo run --bin zap1_ops -- --base-url https://api.frontiercompute.cash --json
 cargo run --bin zap1_schema -- --witness examples/schema_witness.json
-cargo run --bin zaino_adapter -- --zaino-url http://127.0.0.1:8137 --api-url https://pay.frontiercompute.io
+cargo run --bin zaino_adapter -- --zaino-url http://127.0.0.1:8137 --api-url https://api.frontiercompute.cash
 ```
 
 Confirms:
@@ -179,8 +187,8 @@ Operator runbook: `https://github.com/Frontier-Compute/zap1/blob/main/docs/OPERA
 ## 13. Conformance kit
 
 ```bash
-python3 conformance/check.py        # 14 protocol checks
-python3 conformance/check_api.py     # 21 API schema checks
+python3 conformance/check.py        # protocol fixture checks
+python3 conformance/check_api.py     # live API schema checks
 python3 scripts/check_compatibility.py  # 6 hash vectors
 ```
 

@@ -17,14 +17,14 @@ You just queried a live attestation protocol on Zcash mainnet. 5 anchored Merkle
 Pick a leaf hash from the events feed:
 
 ```bash
-LEAF=$(curl -sf https://pay.frontiercompute.io/events?limit=1 | python3 -c "import json,sys; print(json.load(sys.stdin)['events'][0]['leaf_hash'])")
+LEAF=$(curl -sf https://api.frontiercompute.cash/events?limit=1 | python3 -c "import json,sys; print(json.load(sys.stdin)['events'][0]['leaf_hash'])")
 echo "Leaf: $LEAF"
 ```
 
 Fetch the full proof bundle:
 
 ```bash
-curl -sf "https://pay.frontiercompute.io/verify/$LEAF/proof.json" | python3 -m json.tool
+curl -sf "https://api.frontiercompute.cash/verify/$LEAF/proof.json" | python3 -m json.tool
 ```
 
 The bundle contains: leaf hash, event type, proof path (sibling hashes), root, anchor txid, and block height. Everything needed to verify independently.
@@ -85,8 +85,8 @@ use zap1_verify::{compute_leaf_hash, verify_proof};
 // Recompute a PROGRAM_ENTRY leaf
 let leaf = compute_leaf_hash(0x01, b"wallet_abc");
 
-// Verify a proof path
-let valid = verify_proof(&leaf, &siblings, &root);
+// Verify a proof path against the count-bound v2 root commitment
+let valid = verify_proof(&leaf, &siblings, leaf_count, &root);
 ```
 
 83KB of WASM. One dependency. Works in browsers.

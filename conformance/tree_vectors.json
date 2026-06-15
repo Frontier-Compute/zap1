@@ -1,22 +1,32 @@
 {
-  "description": "Merkle tree construction vectors. NordicShield_MRK personalization for internal nodes.",
+  "description": "Merkle tree construction vectors. NordicShield_MRK personalization for internal nodes and NordicShield_RTK for count-bound root commitments.",
   "node_personalization": "NordicShield_MRK",
+  "root_personalization": "NordicShield_RTK",
   "hash_function": "BLAKE2b-256",
   "vectors": [
     {
-      "description": "single leaf tree - root equals leaf",
+      "description": "single leaf tree - root binds leaf count",
       "leaves": [
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
       ],
-      "expected_root": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
+      "expected_root": "586a84be4d3a717f06a0b837e8dbb9a333a3c44a679338dfa29d422569cd1d8c"
     },
     {
-      "description": "two-leaf tree from mainnet anchor at block 3,286,631",
+      "description": "two-leaf tree - root binds leaf count",
       "leaves": [
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
         "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
       ],
-      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd"
+    },
+    {
+      "description": "three-leaf tree - odd final node carries up and root binds count",
+      "leaves": [
+        "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+        "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+        "344a05bf81faf6e2d54a0e52ea0267aff0244998eb1ee27adf5627413e92f089"
+      ],
+      "expected_root": "98af1094ee03790ad59bbb597e1577bf2a912a797588f4a0e1ca28792903f8c8"
     },
     {
       "description": "empty tree",

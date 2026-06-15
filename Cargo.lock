@@ -3599,16 +3599,16 @@ dependencies = [
 
 [[package]]
 name = "zap1-verify"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake2b_simd",
 ]
 
 [[package]]
 name = "zcash-memo-decode"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43fe9f9893e24c86022b259f3aa32c80ca4b56970822581a090360604356b151"
+checksum = "4ee1cb67a815a96e2f9b2fc3f2c04b015915776eaa758ab92deeeed4369e0e86"
 
 [[package]]
 name = "zcash_address"

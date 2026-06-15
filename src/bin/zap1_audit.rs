@@ -3,6 +3,9 @@ use std::fs;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
+const LEGACY_SCHEME: &str = "ZAP1_LEGACY_DUPLICATE_ODD";
+const LEGACY_ROOT_MAX_ANCHOR_HEIGHT: u32 = 3_317_133;
+
 #[derive(Debug, Deserialize)]
 struct ProofBundle {
     protocol: String,
@@ -33,6 +36,7 @@ struct BundleRoot {
     hash: String,
     leaf_count: u64,
     created_at: String,
+    scheme: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +63,8 @@ struct ExportProof {
     event_type: String,
     proof_steps: Vec<BundleProofStep>,
     root: String,
+    leaf_count: Option<usize>,
+    merkle_scheme: Option<String>,
     anchor_txid: Option<String>,
     anchor_height: Option<u32>,
 }
@@ -125,7 +131,14 @@ fn verify_export(package: &AuditPackage) -> Result<()> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let valid = zap1_verify::verify_proof(&leaf, &steps, &root);
+        let valid_count_bound = proof
+            .leaf_count
+            .map(|leaf_count| zap1_verify::verify_proof(&leaf, &steps, leaf_count, &root))
+            .unwrap_or(false);
+        let valid_legacy = proof.merkle_scheme.as_deref() == Some(LEGACY_SCHEME)
+            && historical_legacy_allowed(proof.anchor_height)
+            && zap1_verify::verify_legacy_proof(&leaf, &steps, &root);
+        let valid = valid_count_bound || valid_legacy;
         if valid {
             println!(
                 "pass: {} {} anchor={}",
@@ -154,6 +167,12 @@ fn verify_export(package: &AuditPackage) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn historical_legacy_allowed(anchor_height: Option<u32>) -> bool {
+    anchor_height
+        .map(|height| height <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT)
+        .unwrap_or(false)
 }
 
 fn parse_args() -> Result<InputSource> {
@@ -220,7 +239,13 @@ fn verify_bundle(bundle: &ProofBundle) -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    if !zap1_verify::verify_proof(&leaf, &proof, &root) {
+    let valid_count_bound =
+        zap1_verify::verify_proof(&leaf, &proof, bundle.root.leaf_count as usize, &root);
+    let valid_legacy = bundle.root.scheme.as_deref() == Some(LEGACY_SCHEME)
+        && historical_legacy_allowed(bundle.anchor.height)
+        && zap1_verify::verify_legacy_proof(&leaf, &proof, &root);
+
+    if !(valid_count_bound || valid_legacy) {
         return Err(anyhow!("proof verification failed"));
     }
 

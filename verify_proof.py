@@ -17,7 +17,8 @@ Supports all 9 ZAP1 event types (ONCHAIN_PROTOCOL.md v2.0.0):
   0x04 DEPLOYMENT, 0x05 HOSTING_PAYMENT, 0x06 SHIELD_RENEWAL,
   0x07 TRANSFER, 0x08 EXIT, 0x09 MERKLE_ROOT
 
-Hash: BLAKE2b-256, personalization "NordicShield_" (leaf) / "NordicShield_MRK" (node)
+Hash: BLAKE2b-256, personalization "NordicShield_" (leaf),
+"NordicShield_MRK" (node), and "NordicShield_RTK" (root commitment).
 """
 
 import argparse
@@ -33,6 +34,10 @@ except ImportError:
 
 LEAF_PERSONAL = b"NordicShield_\x00\x00\x00"  # 16 bytes
 NODE_PERSONAL = b"NordicShield_MRK"  # 16 bytes
+ROOT_PERSONAL = b"NordicShield_RTK"  # 16 bytes
+COUNT_BOUND_SCHEME = "ZAP1_COUNT_BOUND_V2"
+LEGACY_SCHEME = "ZAP1_LEGACY_DUPLICATE_ODD"
+LEGACY_ROOT_MAX_ANCHOR_HEIGHT = 3317133
 
 
 def _hash(type_byte: int, payload: bytes) -> bytes:
@@ -83,7 +88,17 @@ def hash_node(left: bytes, right: bytes) -> bytes:
     return blake2b(left + right, digest_size=32, person=NODE_PERSONAL).digest()
 
 
-def verify_proof(leaf_hash: bytes, proof: list, expected_root: bytes) -> bool:
+def commit_root(leaf_count: int, raw_root: bytes) -> bytes:
+    if leaf_count <= 0:
+        raise ValueError("leaf_count must be positive")
+    return blake2b(
+        b"\x01" + int(leaf_count).to_bytes(8, "big") + raw_root,
+        digest_size=32,
+        person=ROOT_PERSONAL,
+    ).digest()
+
+
+def walk_proof(leaf_hash: bytes, proof: list) -> bytes:
     current = leaf_hash
     for step in proof:
         sibling = bytes.fromhex(step["hash"])
@@ -91,7 +106,38 @@ def verify_proof(leaf_hash: bytes, proof: list, expected_root: bytes) -> bool:
             current = hash_node(current, sibling)
         else:
             current = hash_node(sibling, current)
-    return current == expected_root
+    return current
+
+
+def historical_legacy_allowed(scheme, anchor_height, allow_flag) -> bool:
+    return (
+        (allow_flag or scheme == LEGACY_SCHEME)
+        and anchor_height is not None
+        and int(anchor_height) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
+    )
+
+
+def verify_proof(
+    leaf_hash: bytes,
+    proof: list,
+    expected_root: bytes,
+    leaf_count: int,
+    scheme=None,
+    anchor_height=None,
+    allow_historical_legacy: bool = False,
+) -> tuple:
+    raw_root = walk_proof(leaf_hash, proof)
+    count_bound_root = commit_root(leaf_count, raw_root)
+
+    if count_bound_root == expected_root:
+        return True, COUNT_BOUND_SCHEME, count_bound_root, raw_root
+
+    if raw_root == expected_root and historical_legacy_allowed(
+        scheme, anchor_height, allow_historical_legacy
+    ):
+        return True, LEGACY_SCHEME, count_bound_root, raw_root
+
+    return False, "INVALID", count_bound_root, raw_root
 
 
 def compute_leaf(args) -> tuple:
@@ -151,18 +197,71 @@ def main():
     parser.add_argument("--new-wallet-hash", help="New wallet hash (for TRANSFER)")
     parser.add_argument("--timestamp", type=int, default=0, help="Unix timestamp (for DEPLOYMENT, EXIT)")
     parser.add_argument("--proof", required=True, help="Path to proof JSON file")
-    parser.add_argument("--root", required=True, help="Hex-encoded expected Merkle root")
+    parser.add_argument("--root", help="Hex-encoded expected Merkle root")
+    parser.add_argument("--leaf-count", type=int, help="Leaf count bound into the ZAP1 v2 root")
+    parser.add_argument("--anchor-height", type=int, help="Anchor height for historical legacy roots")
+    parser.add_argument(
+        "--allow-historical-legacy",
+        action="store_true",
+        help=f"Permit legacy raw-root verification only when --anchor-height <= {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}",
+    )
     args = parser.parse_args()
 
     with open(args.proof) as f:
-        proof = json.load(f)
+        proof_doc = json.load(f)
 
-    expected_root = bytes.fromhex(args.root)
-    leaf_hash, desc = compute_leaf(args)
+    bundle = proof_doc if isinstance(proof_doc, dict) and "proof" in proof_doc else None
+    proof = bundle["proof"] if bundle else proof_doc
+    if not isinstance(proof, list):
+        print("Error: proof file must contain a proof array or ZAP1 proof bundle")
+        sys.exit(1)
+
+    bundle_root = bundle.get("root", {}) if bundle else {}
+    bundle_anchor = bundle.get("anchor", {}) if bundle else {}
+    bundle_leaf = bundle.get("leaf", {}) if bundle else {}
+
+    root_hex = args.root or bundle_root.get("hash")
+    if not root_hex:
+        print("Error: provide --root or a proof bundle with root.hash")
+        sys.exit(1)
+
+    leaf_count = args.leaf_count if args.leaf_count is not None else bundle_root.get("leaf_count")
+    if leaf_count is None:
+        print("Error: provide --leaf-count or a proof bundle with root.leaf_count")
+        sys.exit(1)
+
+    anchor_height = (
+        args.anchor_height
+        if args.anchor_height is not None
+        else bundle_anchor.get("height")
+    )
+    scheme = bundle_root.get("scheme")
+
+    expected_root = bytes.fromhex(root_hex)
+    if bundle_leaf.get("hash") and not any(
+        [
+            args.leaf_hash,
+            args.wallet_hash,
+            args.serial,
+            args.event_type,
+            args.contract_sha256,
+            args.facility_id,
+            args.new_wallet_hash,
+        ]
+    ):
+        leaf_hash = bytes.fromhex(bundle_leaf["hash"])
+        desc = f"bundle leaf event={bundle_leaf.get('event_type', 'unknown')}"
+    else:
+        leaf_hash, desc = compute_leaf(args)
 
     print(f"Event:                 {desc}")
     print(f"Leaf hash:             {leaf_hash.hex()}")
     print(f"Expected root:         {expected_root.hex()}")
+    print(f"Leaf count:            {int(leaf_count)}")
+    if anchor_height is not None:
+        print(f"Anchor height:         {anchor_height}")
+    if scheme:
+        print(f"Bundle root scheme:    {scheme}")
     print(f"Proof steps:           {len(proof)}")
     print()
 
@@ -176,14 +275,32 @@ def main():
             current = hash_node(sibling, current)
         print(f"  Step {i}: sibling={step['hash'][:16]}... ({pos}) -> {current.hex()[:16]}...")
 
+    count_bound_root = commit_root(int(leaf_count), current)
+    legacy_allowed = historical_legacy_allowed(
+        scheme, anchor_height, args.allow_historical_legacy
+    )
+
     print()
-    if current == expected_root:
-        print("VERIFIED. Proof is valid. Leaf is included in the published root.")
+    print(f"Computed v2 root:      {count_bound_root.hex()}")
+    print(f"Legacy raw root:       {current.hex()}")
+    if count_bound_root == expected_root:
+        print("VERIFIED. Count-bound proof is valid. Leaf is included in the published root.")
         sys.exit(0)
+    if current == expected_root and legacy_allowed:
+        print("VERIFIED. Historical legacy proof is valid for the supplied pre-fix anchor height.")
+        print(f"WARNING: legacy roots do not bind leaf_count; accepted only through height {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}.")
+        sys.exit(0)
+
+    if current == expected_root:
+        print("FAILED. Proof resolves only to the legacy raw root.")
+        print(
+            f"        Legacy requires root.scheme={LEGACY_SCHEME!r} or --allow-historical-legacy, "
+            f"plus anchor height <= {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}."
+        )
     else:
-        print(f"FAILED. Computed root: {current.hex()}")
-        print(f"         Expected:     {expected_root.hex()}")
-        sys.exit(1)
+        print("FAILED. Computed root does not match the expected root.")
+    print(f"        Expected:      {expected_root.hex()}")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 //!
 //! Standalone verification of ZAP1 on-chain attestation commitments.
 //! Implements BLAKE2b-256 leaf hashing for all 9 ZAP1 event types
-//! and Merkle proof path walking with `NordicShield_MRK` node personalization.
+//! and Merkle proof path walking with ZAP1 Merkle personalizations.
 //!
 //! Only dependency: `blake2b_simd`.
 
@@ -16,6 +16,9 @@ pub const DEFAULT_LEAF_PERSONAL: &[u8; 13] = b"NordicShield_";
 
 /// BLAKE2b-256 personalization for Merkle node hashing.
 pub const DEFAULT_NODE_PERSONAL: &[u8; 16] = b"NordicShield_MRK";
+
+/// BLAKE2b-256 personalization for count-bound Merkle root commitments.
+pub const DEFAULT_ROOT_PERSONAL: &[u8; 16] = b"NordicShield_RTK";
 
 /// Domain-separation strings used for ZAP1 leaf and Merkle hashing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +168,28 @@ pub fn node_hash_with_personalization(
     out
 }
 
+/// Bind a raw tree root to the leaf count.
+///
+/// ZAP1 v2 roots commit to `0x01 || leaf_count_be_u64 || raw_tree_root`
+/// with the `NordicShield_RTK` personalization. This prevents the legacy
+/// odd-node duplication ambiguity where `[A,B,C]` and `[A,B,C,C]` can share
+/// a root.
+pub fn commit_root(leaf_count: usize, raw_root: &[u8; 32]) -> [u8; 32] {
+    let leaf_count = u64::try_from(leaf_count).expect("leaf count exceeds u64");
+    let mut data = [0u8; 41];
+    data[0] = 1;
+    data[1..9].copy_from_slice(&leaf_count.to_be_bytes());
+    data[9..].copy_from_slice(raw_root);
+
+    let mut params = Params::new();
+    params.hash_length(32);
+    params.personal(DEFAULT_ROOT_PERSONAL);
+    let h = params.hash(&data);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(h.as_bytes());
+    out
+}
+
 /// Append a 2-byte big-endian length prefix followed by the field bytes.
 #[inline]
 fn push_len_prefixed(buf: &mut Vec<u8>, field: &[u8]) {
@@ -287,16 +312,7 @@ pub fn compute_leaf_hash_with_personalization(
     }
 }
 
-/// Verify a Merkle inclusion proof.
-///
-/// Walks from `leaf_hash` through each step in `proof_path`, hashing
-/// with `NordicShield_MRK` personalization at each level.
-/// Returns `true` if the computed root matches `expected_root`.
-pub fn verify_proof(
-    leaf_hash: &[u8; 32],
-    proof_path: &[ProofStep],
-    expected_root: &[u8; 32],
-) -> bool {
+fn walk_raw_proof(leaf_hash: &[u8; 32], proof_path: &[ProofStep]) -> [u8; 32] {
     let mut current = *leaf_hash;
     for step in proof_path {
         current = match step.position {
@@ -304,7 +320,48 @@ pub fn verify_proof(
             SiblingPosition::Left => node_hash(&step.hash, &current),
         };
     }
-    current == *expected_root
+    current
+}
+
+/// Verify a historical legacy proof against a raw Merkle root.
+///
+/// This does not bind `leaf_count` and is retained only for explicitly
+/// historical anchors that predate count-bound root commitments. New callers
+/// should use [`verify_proof`] or [`verify_proof_with_leaf_count`].
+pub fn verify_legacy_proof(
+    leaf_hash: &[u8; 32],
+    proof_path: &[ProofStep],
+    expected_root: &[u8; 32],
+) -> bool {
+    walk_raw_proof(leaf_hash, proof_path) == *expected_root
+}
+
+/// Verify a ZAP1 v2 proof against a count-bound root commitment.
+///
+/// Walks from `leaf_hash` through each step in `proof_path`, then commits the
+/// raw tree root as `BLAKE2b_RTK(0x01 || leaf_count_be_u64 || raw_root)`.
+pub fn verify_proof(
+    leaf_hash: &[u8; 32],
+    proof_path: &[ProofStep],
+    leaf_count: usize,
+    expected_root: &[u8; 32],
+) -> bool {
+    if leaf_count == 0 {
+        return false;
+    }
+
+    let current = walk_raw_proof(leaf_hash, proof_path);
+    commit_root(leaf_count, &current) == *expected_root
+}
+
+/// Verify a ZAP1 v2 proof against a count-bound root commitment.
+pub fn verify_proof_with_leaf_count(
+    leaf_hash: &[u8; 32],
+    proof_path: &[ProofStep],
+    leaf_count: usize,
+    expected_root: &[u8; 32],
+) -> bool {
+    verify_proof(leaf_hash, proof_path, leaf_count, expected_root)
 }
 
 // Hex utilities
@@ -495,16 +552,18 @@ mod tests {
         let leaf2 =
             hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
                 .unwrap();
-        let expected_root =
+        let legacy_root =
             hex_to_bytes32("024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a")
                 .unwrap();
+        let expected_root = commit_root(2, &legacy_root);
 
         let proof = vec![ProofStep {
             hash: leaf2,
             position: SiblingPosition::Right,
         }];
 
-        assert!(verify_proof(&leaf1, &proof, &expected_root));
+        assert!(verify_proof(&leaf1, &proof, 2, &expected_root));
+        assert!(verify_legacy_proof(&leaf1, &proof, &legacy_root));
     }
 
     #[test]
@@ -516,16 +575,18 @@ mod tests {
         let leaf2 =
             hex_to_bytes32("de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133")
                 .unwrap();
-        let expected_root =
+        let legacy_root =
             hex_to_bytes32("024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a")
                 .unwrap();
+        let expected_root = commit_root(2, &legacy_root);
 
         let proof = vec![ProofStep {
             hash: leaf1,
             position: SiblingPosition::Left,
         }];
 
-        assert!(verify_proof(&leaf2, &proof, &expected_root));
+        assert!(verify_proof(&leaf2, &proof, 2, &expected_root));
+        assert!(verify_legacy_proof(&leaf2, &proof, &legacy_root));
     }
 
     #[test]
@@ -543,16 +604,27 @@ mod tests {
             position: SiblingPosition::Right,
         }];
 
-        assert!(!verify_proof(&leaf, &proof, &wrong_root));
+        assert!(!verify_proof(&leaf, &proof, 2, &wrong_root));
     }
 
     #[test]
     fn verify_proof_empty_path() {
-        // Empty proof path: leaf IS the root
+        // Empty proof path: leaf is the raw tree root, then leaf_count is bound.
         let leaf =
             hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
                 .unwrap();
-        assert!(verify_proof(&leaf, &[], &leaf));
+        let expected_root = commit_root(1, &leaf);
+        assert!(verify_proof(&leaf, &[], 1, &expected_root));
+        assert!(verify_legacy_proof(&leaf, &[], &leaf));
+    }
+
+    #[test]
+    fn verify_proof_with_leaf_count_empty_path() {
+        let leaf =
+            hex_to_bytes32("075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b")
+                .unwrap();
+        let expected_root = commit_root(1, &leaf);
+        assert!(verify_proof_with_leaf_count(&leaf, &[], 1, &expected_root));
     }
 
     #[test]
@@ -565,7 +637,8 @@ mod tests {
 
         let ab = node_hash(&a, &b);
         let cd = node_hash(&c, &d);
-        let root = node_hash(&ab, &cd);
+        let raw_root = node_hash(&ab, &cd);
+        let root = commit_root(4, &raw_root);
 
         // Prove leaf c: sibling d (right), then sibling ab (left)
         let proof = vec![
@@ -578,7 +651,7 @@ mod tests {
                 position: SiblingPosition::Left,
             },
         ];
-        assert!(verify_proof(&c, &proof, &root));
+        assert!(verify_proof(&c, &proof, 4, &root));
 
         // Prove leaf b: sibling a (left), then sibling cd (right)
         let proof = vec![
@@ -591,7 +664,24 @@ mod tests {
                 position: SiblingPosition::Right,
             },
         ];
-        assert!(verify_proof(&b, &proof, &root));
+        assert!(verify_proof(&b, &proof, 4, &root));
+    }
+
+    #[test]
+    fn count_bound_root_prevents_odd_duplicate_ambiguity() {
+        let a = compute_leaf_hash(&EventPayload::ProgramEntry { wallet_hash: b"w1" });
+        let b = compute_leaf_hash(&EventPayload::ProgramEntry { wallet_hash: b"w2" });
+        let c = compute_leaf_hash(&EventPayload::ProgramEntry { wallet_hash: b"w3" });
+
+        let ab = node_hash(&a, &b);
+        let raw_three = node_hash(&ab, &c);
+        let legacy_ambiguous_raw = node_hash(&ab, &node_hash(&c, &c));
+
+        assert_ne!(raw_three, legacy_ambiguous_raw);
+        assert_ne!(
+            commit_root(3, &raw_three),
+            commit_root(4, &legacy_ambiguous_raw)
+        );
     }
 
     #[test]

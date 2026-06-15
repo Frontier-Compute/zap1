@@ -82,7 +82,7 @@ tokio-stream = "0.1"
 zap1-verify = { path = "zap1-verify" }
 
 # Universal memo decoder
-zcash-memo-decode = "0.1.0"
+zcash-memo-decode = "0.1.1"
 rand_core = "0.6.4"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.2"

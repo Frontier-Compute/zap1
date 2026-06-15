@@ -9,8 +9,8 @@ use crate::memo::{
     hash_staking_withdraw, hash_transfer, MemoType,
 };
 use crate::merkle::{
-    compute_root, decode_hash, generate_proof, MerkleLeafRecord, MerkleRootRecord,
-    VerificationBundle,
+    compute_legacy_root, compute_root, decode_hash, generate_legacy_proof, generate_proof,
+    MerkleLeafRecord, MerkleRootRecord, VerificationBundle,
 };
 use crate::models::{Invoice, InvoiceStatus};
 
@@ -954,16 +954,22 @@ impl Db {
             return Ok(None);
         };
 
-        // Find the smallest anchored root that covers this leaf (stable proof)
         let leaf_position = index + 1; // 1-based leaf count
-        let covering_root = conn.query_row(
+        let all_leaf_bytes = all_leaves
+            .iter()
+            .map(|leaf| decode_hash(&leaf.leaf_hash))
+            .collect::<Result<Vec<_>>>()?;
+
+        // Prefer the smallest anchored count-bound root covering this leaf.
+        // Fall back to a legacy-shaped root only when no safe anchored root covers it.
+        let mut stmt = conn.prepare(
             "SELECT root_hash, leaf_count, anchor_txid, anchor_height, created_at
              FROM merkle_roots
              WHERE leaf_count >= ?1 AND anchor_txid IS NOT NULL
-             ORDER BY leaf_count ASC
-             LIMIT 1",
-            params![leaf_position as i64],
-            |row| {
+             ORDER BY leaf_count ASC, id ASC",
+        )?;
+        let covering_roots = stmt
+            .query_map(params![leaf_position as i64], |row| {
                 Ok(MerkleRootRecord {
                     root_hash: row.get(0)?,
                     leaf_count: row.get::<_, i64>(1)? as usize,
@@ -971,36 +977,37 @@ impl Db {
                     anchor_height: row.get::<_, Option<i64>>(3)?.map(|v| v as u32),
                     created_at: row.get(4)?,
                 })
-            },
-        );
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
-        // Use covering anchored root if available, otherwise fall back to current root
-        let (root, leaf_set_size) = match covering_root {
-            Ok(r) => {
-                let size = r.leaf_count;
-                (r, size)
-            }
-            Err(_) => {
-                // No anchored root covers this leaf yet - use current root
-                match current_root(&conn)? {
-                    Some(r) => {
-                        let size = r.leaf_count;
-                        (r, size)
+        let (root, leaf_set_size) =
+            match select_covering_root(&covering_roots, &all_leaf_bytes, leaf_position) {
+                Some(root) => root,
+                None => {
+                    // No anchored root covers this leaf yet - use current root.
+                    match current_root(&conn)? {
+                        Some(r) => {
+                            let size = r.leaf_count;
+                            (r, size)
+                        }
+                        None => return Ok(None),
                     }
-                    None => return Ok(None),
                 }
-            }
+            };
+
+        if leaf_set_size > all_leaf_bytes.len() || index >= leaf_set_size {
+            return Ok(None);
+        }
+
+        let leaf_bytes = &all_leaf_bytes[..leaf_set_size];
+        let root_bytes = decode_hash(&root.root_hash)?;
+        let new_root = compute_root(leaf_bytes);
+        let legacy_root = compute_legacy_root(leaf_bytes);
+        let proof = if legacy_root == root_bytes && new_root != root_bytes {
+            generate_legacy_proof(leaf_bytes, index)
+        } else {
+            generate_proof(leaf_bytes, index)
         };
-
-        // Generate proof using only the leaves covered by this root
-        let leaves_for_proof: Vec<&MerkleLeafRecord> =
-            all_leaves.iter().take(leaf_set_size).collect();
-        let leaf_bytes: Vec<[u8; 32]> = leaves_for_proof
-            .iter()
-            .map(|leaf| decode_hash(&leaf.leaf_hash))
-            .collect::<Result<Vec<_>>>()?;
-
-        let proof = generate_proof(&leaf_bytes, index);
         Ok(Some(VerificationBundle {
             leaf: all_leaves[index].clone(),
             proof,
@@ -1282,8 +1289,94 @@ fn merkle_leaf_by_hash(conn: &Connection, leaf_hash: &str) -> Result<Option<Merk
     }
 }
 
+fn select_covering_root(
+    roots: &[MerkleRootRecord],
+    leaf_hashes: &[[u8; 32]],
+    leaf_position: usize,
+) -> Option<(MerkleRootRecord, usize)> {
+    let mut legacy_fallback = None;
+
+    for root in roots {
+        let size = root.leaf_count;
+        if size < leaf_position || size > leaf_hashes.len() {
+            continue;
+        }
+
+        let leaves = &leaf_hashes[..size];
+        if root.root_hash == hex::encode(compute_root(leaves)) {
+            return Some((root.clone(), size));
+        }
+
+        if legacy_fallback.is_none() && root.root_hash == hex::encode(compute_legacy_root(leaves)) {
+            legacy_fallback = Some((root.clone(), size));
+        }
+    }
+
+    legacy_fallback
+}
+
 fn current_root(conn: &Connection) -> Result<Option<MerkleRootRecord>> {
     let total_leaves = total_leaf_count_conn(conn)?;
+    if total_leaves == 0 {
+        return Ok(None);
+    }
+
+    let leaf_hashes = merkle_leaves(conn)?
+        .iter()
+        .map(|leaf| decode_hash(&leaf.leaf_hash))
+        .collect::<Result<Vec<_>>>()?;
+    let canonical_root_hash = hex::encode(compute_root(&leaf_hashes));
+
+    if let Some(root) = root_by_hash_and_count(conn, &canonical_root_hash, total_leaves)? {
+        return Ok(Some(root));
+    }
+
+    let latest = latest_root(conn, total_leaves)?;
+    if latest
+        .as_ref()
+        .map(|root| root.root_hash == canonical_root_hash && root.leaf_count == total_leaves)
+        .unwrap_or(false)
+    {
+        return Ok(latest);
+    }
+
+    let created_at = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO merkle_roots (root_hash, leaf_count, created_at) VALUES (?1, ?2, ?3)",
+        params![canonical_root_hash, total_leaves as i64, created_at],
+    )?;
+    latest_root(conn, total_leaves)
+}
+
+fn root_by_hash_and_count(
+    conn: &Connection,
+    root_hash: &str,
+    leaf_count: usize,
+) -> Result<Option<MerkleRootRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT root_hash, leaf_count, anchor_txid, anchor_height, created_at
+         FROM merkle_roots
+         WHERE root_hash = ?1 AND leaf_count = ?2
+         ORDER BY id DESC
+         LIMIT 1",
+    )?;
+    let result = stmt.query_row(params![root_hash, leaf_count as i64], |row| {
+        Ok(MerkleRootRecord {
+            root_hash: row.get(0)?,
+            leaf_count,
+            anchor_txid: row.get(2)?,
+            anchor_height: row.get::<_, Option<i64>>(3)?.map(|value| value as u32),
+            created_at: row.get(4)?,
+        })
+    });
+    match result {
+        Ok(root) => Ok(Some(root)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn latest_root(conn: &Connection, total_leaves: usize) -> Result<Option<MerkleRootRecord>> {
     let mut stmt = conn.prepare(
         "SELECT root_hash, leaf_count, anchor_txid, anchor_height, created_at
          FROM merkle_roots
@@ -1318,7 +1411,10 @@ fn normalize_root_leaf_count(leaf_count: usize, total_leaves: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_root_leaf_count;
+    use super::{current_root, normalize_root_leaf_count, select_covering_root};
+    use crate::memo::hash_program_entry;
+    use crate::merkle::{compute_legacy_root, compute_root, MerkleRootRecord};
+    use rusqlite::{params, Connection};
 
     #[test]
     fn normalize_root_leaf_count_preserves_valid_count() {
@@ -1329,5 +1425,103 @@ mod tests {
     #[test]
     fn normalize_root_leaf_count_clamps_impossible_count() {
         assert_eq!(normalize_root_leaf_count(13, 12), 12);
+    }
+
+    #[test]
+    fn current_root_materializes_count_bound_root_over_latest_legacy_root() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+            .unwrap();
+
+        let leaves = [
+            hash_program_entry("wallet_a"),
+            hash_program_entry("wallet_b"),
+        ];
+        for (index, leaf) in leaves.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO merkle_leaves (leaf_hash, event_type, wallet_hash, serial_number, created_at)
+                 VALUES (?1, 1, ?2, NULL, ?3)",
+                params![
+                    hex::encode(leaf),
+                    format!("wallet_{}", index),
+                    "2026-06-12T00:00:00Z"
+                ],
+            )
+            .unwrap();
+        }
+
+        let legacy_root = hex::encode(compute_legacy_root(&leaves));
+        let count_bound_root = hex::encode(compute_root(&leaves));
+        assert_ne!(legacy_root, count_bound_root);
+
+        conn.execute(
+            "INSERT INTO merkle_roots (root_hash, leaf_count, created_at)
+             VALUES (?1, 2, '2026-06-12T00:00:01Z')",
+            params![legacy_root],
+        )
+        .unwrap();
+
+        let root = current_root(&conn).unwrap().unwrap();
+        assert_eq!(root.root_hash, count_bound_root);
+        assert_eq!(root.leaf_count, 2);
+        assert!(root.anchor_txid.is_none());
+
+        let row_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM merkle_roots WHERE root_hash = ?1 AND leaf_count = 2",
+                params![count_bound_root],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(row_count, 1);
+    }
+
+    #[test]
+    fn select_covering_root_prefers_count_bound_root_over_earlier_legacy_root() {
+        let leaves = [
+            hash_program_entry("wallet_a"),
+            hash_program_entry("wallet_b"),
+        ];
+        let legacy_root = MerkleRootRecord {
+            root_hash: hex::encode(compute_legacy_root(&leaves[..1])),
+            leaf_count: 1,
+            anchor_txid: Some("legacy".to_string()),
+            anchor_height: Some(3_286_631),
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+        };
+        let count_bound_root = MerkleRootRecord {
+            root_hash: hex::encode(compute_root(&leaves)),
+            leaf_count: 2,
+            anchor_txid: Some("v2".to_string()),
+            anchor_height: Some(3_317_134),
+            created_at: "2026-06-12T00:00:01Z".to_string(),
+        };
+
+        let (selected, leaf_count) =
+            select_covering_root(&[legacy_root, count_bound_root.clone()], &leaves, 1).unwrap();
+
+        assert_eq!(selected.root_hash, count_bound_root.root_hash);
+        assert_eq!(leaf_count, 2);
+    }
+
+    #[test]
+    fn select_covering_root_falls_back_to_legacy_when_no_count_bound_root_covers_leaf() {
+        let leaves = [
+            hash_program_entry("wallet_a"),
+            hash_program_entry("wallet_b"),
+        ];
+        let legacy_root = MerkleRootRecord {
+            root_hash: hex::encode(compute_legacy_root(&leaves)),
+            leaf_count: 2,
+            anchor_txid: Some("legacy".to_string()),
+            anchor_height: Some(3_286_631),
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+        };
+
+        let (selected, leaf_count) =
+            select_covering_root(std::slice::from_ref(&legacy_root), &leaves, 2).unwrap();
+
+        assert_eq!(selected.root_hash, legacy_root.root_hash);
+        assert_eq!(leaf_count, 2);
     }
 }

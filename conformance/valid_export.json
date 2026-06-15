@@ -16,6 +16,7 @@
         }
       ],
       "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "merkle_scheme": "ZAP1_LEGACY_DUPLICATE_ODD",
       "anchor_txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
       "anchor_height": 3286631,
       "witness": {
@@ -39,6 +40,7 @@
         }
       ],
       "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "merkle_scheme": "ZAP1_LEGACY_DUPLICATE_ODD",
       "anchor_txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
       "anchor_height": 3286631,
       "witness": {

@@ -9,6 +9,8 @@
   "node_hash_function": "BLAKE2b-256",
   "node_personalization": "NordicShield_MRK",
   "node_personalization_hex": "4e6f72646963536869656c645f4d524b",
+  "root_personalization": "NordicShield_RTK",
+  "root_personalization_hex": "4e6f72646963536869656c645f52544b",
 
   "section_1_memo_envelope": {
     "requirement": "Binary payload layout and memo encoding (ZIP 1243 Section: Binary Payload Layout)",
@@ -240,29 +242,29 @@
       },
       {
         "id": "3.2",
-        "description": "Single leaf - root equals the leaf hash",
+        "description": "Single leaf - committed root binds leaf count",
         "leaves": ["075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"],
-        "expected_root": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
+        "expected_root": "586a84be4d3a717f06a0b837e8dbb9a333a3c44a679338dfa29d422569cd1d8c"
       },
       {
         "id": "3.3",
-        "description": "Two-leaf tree from mainnet anchor at block 3,286,631",
+        "description": "Two-leaf tree - committed root binds leaf count",
         "leaves": [
           "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
           "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
         ],
-        "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+        "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd"
       },
       {
         "id": "3.4",
-        "description": "Three-leaf tree - odd cardinality duplicates final node",
+        "description": "Three-leaf tree - odd final node carries up and committed root binds leaf count",
         "leaves": [
           "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
           "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
           "344a05bf81faf6e2d54a0e52ea0267aff0244998eb1ee27adf5627413e92f089"
         ],
-        "expected_root": "8e58a2a20a7e846031f37eaf135fe853bc382db9ceee880252363ae8139c3dde",
-        "comment": "Third leaf is PROGRAM_ENTRY(wallet_abc). At layer 1: node01 = H(leaf0||leaf1), node2dup = H(leaf2||leaf2). Root = H(node01||node2dup)."
+        "expected_root": "98af1094ee03790ad59bbb597e1577bf2a912a797588f4a0e1ca28792903f8c8",
+        "comment": "Third leaf is PROGRAM_ENTRY(wallet_abc). Raw tree root = H(node01||leaf2) with leaf2 carried up. Committed root = H_RTK(0x01 || 3_be || raw_root)."
       }
     ]
   },
@@ -274,8 +276,8 @@
         "id": "4.1",
         "description": "MERKLE_ROOT memo wire format",
         "type_byte": "0x09",
-        "root_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-        "expected_memo": "ZAP1:09:024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+        "root_hash": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+        "expected_memo": "ZAP1:09:94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd"
       },
       {
         "id": "4.2",
@@ -304,7 +306,8 @@
         "proof_path": [
           {"hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b", "position": "left"}
         ],
-        "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+        "leaf_count": 2,
+        "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
         "valid": true
       },
       {
@@ -329,11 +332,12 @@
   },
 
   "section_6_mainnet_reference": {
-    "requirement": "Cross-implementation validation against mainnet anchor",
+    "requirement": "Historical cross-implementation validation against the pre-count-binding mainnet anchor",
     "first_anchor": {
       "txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
       "height": 3286631,
-      "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a"
+      "root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "scheme": "ZAP1_LEGACY_DUPLICATE_ODD"
     },
     "leaves_in_first_anchor": [
       {

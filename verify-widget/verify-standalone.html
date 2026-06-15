@@ -304,6 +304,7 @@ function truncHash(h, n) {
 // ZAP1 BLAKE2b hashing
 const LEAF_P = new Uint8Array([0x4e,0x6f,0x72,0x64,0x69,0x63,0x53,0x68,0x69,0x65,0x6c,0x64,0x5f,0x00,0x00,0x00]);
 const NODE_P = new Uint8Array([0x4e,0x6f,0x72,0x64,0x69,0x63,0x53,0x68,0x69,0x65,0x6c,0x64,0x5f,0x4d,0x52,0x4b]);
+const ROOT_P = new Uint8Array([0x4e,0x6f,0x72,0x64,0x69,0x63,0x53,0x68,0x69,0x65,0x6c,0x64,0x5f,0x52,0x54,0x4b]);
 const ENC = new TextEncoder();
 const EVENT_PREFIX = { PROGRAM_ENTRY: 0x01, OWNERSHIP_ATTEST: 0x02 };
 
@@ -337,7 +338,20 @@ function nodeHash(left, right) {
   return blake2b256(inp, NODE_P);
 }
 
-function walkProof(leafHex, proof) {
+function commitRoot(leafCount, rawRoot) {
+  let count = BigInt(leafCount);
+  if (count <= 0n) throw new Error("leaf_count must be positive");
+  const inp = new Uint8Array(41);
+  inp[0] = 1;
+  for (let i = 8; i >= 1; i--) {
+    inp[i] = Number(count & 0xffn);
+    count >>= 8n;
+  }
+  inp.set(rawRoot, 9);
+  return blake2b256(inp, ROOT_P);
+}
+
+function walkProof(leafHex, proof, leafCount) {
   let cur = hexToBytes(leafHex);
   const steps = [];
   for (const step of proof) {
@@ -347,7 +361,16 @@ function walkProof(leafHex, proof) {
     cur = nodeHash(l, r);
     steps.push({ left: bytesToHex(l), right: bytesToHex(r), result: bytesToHex(cur) });
   }
-  return { computedRoot: bytesToHex(cur), steps: steps };
+  const legacyRoot = bytesToHex(cur);
+  if (leafCount === undefined || leafCount === null) {
+    return { computedRoot: legacyRoot, legacyRoot: legacyRoot, rootScheme: "ZAP1_LEGACY_DUPLICATE_ODD", steps: steps };
+  }
+  return {
+    computedRoot: bytesToHex(commitRoot(leafCount, cur)),
+    legacyRoot: legacyRoot,
+    rootScheme: "ZAP1_COUNT_BOUND_V2",
+    steps: steps
+  };
 }
 
 // SVG helpers
@@ -367,9 +390,18 @@ function svgBannerFail() {
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 // UI
-const API = "https://pay.frontiercompute.io";
+const API = "https://api.frontiercompute.cash";
+const COUNT_BOUND_SCHEME = "ZAP1_COUNT_BOUND_V2";
+const LEGACY_SCHEME = "ZAP1_LEGACY_DUPLICATE_ODD";
+const LEGACY_ROOT_MAX_ANCHOR_HEIGHT = 3317133;
 const $ = (id) => document.getElementById(id);
 let currentBundle = null;
+
+function isHistoricalLegacyBundle(bundle) {
+  const height = bundle && bundle.anchor ? bundle.anchor.height : null;
+  const scheme = bundle && bundle.root ? bundle.root.scheme : null;
+  return scheme === LEGACY_SCHEME && height !== null && height !== undefined && Number(height) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT;
+}
 
 $("verifyBtn").addEventListener("click", doVerify);
 $("leafInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doVerify(); });
@@ -415,8 +447,12 @@ function renderResult(bundle, inputHash) {
       leafRecomputed = true;
     }
   }
-  const { computedRoot, steps } = walkProof(bundle.leaf.hash, bundle.proof);
-  const rootMatch = computedRoot === bundle.root.hash;
+  const { computedRoot, legacyRoot, steps } = walkProof(bundle.leaf.hash, bundle.proof, bundle.root.leaf_count);
+  const rootMatchV2 = bundle.root.leaf_count !== undefined && bundle.root.leaf_count !== null && computedRoot === bundle.root.hash;
+  const rootMatchLegacy = legacyRoot === bundle.root.hash;
+  const legacyAllowed = rootMatchLegacy && isHistoricalLegacyBundle(bundle);
+  const rootMatch = rootMatchV2 || legacyAllowed;
+  const rootScheme = rootMatchV2 ? COUNT_BOUND_SCHEME : (rootMatchLegacy ? LEGACY_SCHEME : "INVALID");
   const allOk = rootMatch && (leafMatch === null || leafMatch);
 
   let html = "";
@@ -444,7 +480,14 @@ function renderResult(bundle, inputHash) {
   html += '<div class="check-row">' + svgCheck(rootMatch);
   html += '<span style="color:' + (rootMatch ? "#22c55e" : "#ef4444") + '">';
   html += rootMatch ? "Merkle path walks to root - matches" : "Merkle path computed root does NOT match declared root";
-  html += "</span></div></div>";
+  html += "</span></div>";
+  if (rootScheme === LEGACY_SCHEME && legacyAllowed) {
+    html += '<div style="font-size:12px;color:#f59e0b;margin-top:8px">Legacy root: historical anchor verified through block ' + LEGACY_ROOT_MAX_ANCHOR_HEIGHT + '; leaf count is not bound by this root.</div>';
+  }
+  if (rootScheme === LEGACY_SCHEME && !legacyAllowed) {
+    html += '<div style="font-size:12px;color:#ef4444;margin-top:8px">Legacy raw root rejected: requires root.scheme=' + LEGACY_SCHEME + ' and historical anchor height.</div>';
+  }
+  html += "</div>";
 
   // Leaf info
   html += '<div class="card"><div class="section-title">Leaf</div>';
@@ -505,9 +548,10 @@ function renderResult(bundle, inputHash) {
     html += '<div class="path-arrow">↓</div>';
     const rootClass = isLast ? (rootMatch ? "node-root-ok" : "node-root-fail") : "node-comp";
     const labelColor = isLast ? (rootMatch ? "#22c55e" : "#ef4444") : "#6366f1";
-    html += '<div class="path-node ' + rootClass + '" title="' + esc(step.result) + '">';
+    const displayResult = isLast && rootScheme === LEGACY_SCHEME ? legacyRoot : (isLast ? computedRoot : step.result);
+    html += '<div class="path-node ' + rootClass + '" title="' + esc(displayResult) + '">';
     html += '<span class="path-label" style="color:' + labelColor + ';display:block">' + (isLast ? "Computed Root" : "Node " + (i + 1)) + "</span>";
-    html += esc(truncHash(step.result, 16));
+    html += esc(truncHash(displayResult, 16));
     html += "</div></div>";
   }
 

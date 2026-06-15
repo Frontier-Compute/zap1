@@ -89,8 +89,8 @@
         "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
         "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133"
       ],
-      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
-      "note": "NordicShield_MRK personalization for internal nodes"
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "note": "NordicShield_MRK personalization for internal nodes; NordicShield_RTK root commitment binds leaf count"
     }
   ],
   "memo_wire_format": {

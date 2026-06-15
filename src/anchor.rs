@@ -97,22 +97,27 @@ async fn maybe_anchor(
     state: &AnchorState,
     wallet: Option<&AnchorWallet>,
 ) -> Result<()> {
-    let unanchored = db.unanchored_leaf_count()?;
-    if unanchored == 0 {
+    let root = db.current_merkle_root()?;
+    if root.is_none() {
         return Ok(());
     }
 
-    let root = db.current_merkle_root()?;
+    let unanchored = db.unanchored_leaf_count()?;
     let needs_anchor = match &root {
         Some(r) => {
-            if unanchored >= config.anchor_threshold {
+            if r.anchor_txid.is_none() {
+                tracing::info!("Anchor trigger: unanchored root exists");
+                true
+            } else if unanchored == 0 {
+                false
+            } else if unanchored >= config.anchor_threshold {
                 tracing::info!(
                     "Anchor trigger: {} unanchored leaves >= threshold {}",
                     unanchored,
                     config.anchor_threshold
                 );
                 true
-            } else if r.anchor_txid.is_some() {
+            } else {
                 let last_root_time = chrono::DateTime::parse_from_rfc3339(&r.created_at).ok();
                 if let Some(t) = last_root_time {
                     let hours_since =
@@ -130,9 +135,6 @@ async fn maybe_anchor(
                 } else {
                     false
                 }
-            } else {
-                tracing::info!("Anchor trigger: unanchored root exists");
-                true
             }
         }
         None => false,

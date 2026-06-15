@@ -1,0 +1,165 @@
+{
+  "domain": "zap1-verifier-equiv-v1",
+  "description": "Frozen ZAP1 verifier conformance and cross-implementation equivalence corpus. Inputs only. Verdicts are recomputed by each verifier.",
+  "cases": [
+    {
+      "id": "v2_valid_program_entry",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "v2 count-bound valid: leaf1, sibling leaf2 on the right"
+    },
+    {
+      "id": "v2_valid_ownership_attest",
+      "leaf_hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+          "position": "left"
+        }
+      ],
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "v2 count-bound valid: leaf2, sibling leaf1 on the left"
+    },
+    {
+      "id": "v2_valid_multilevel_4leaf",
+      "leaf_hash": "194b52f64dc6098e2163f6821ea6a6c14607f3d08cccf491f3c9c039bc1dbefd",
+      "leaf_count": 4,
+      "proof": [
+        {
+          "hash": "ea89b14108d5a06c2e772a3a89d87c544acd2a8263328811703270f56992dfa2",
+          "position": "right"
+        },
+        {
+          "hash": "fb3e28c68abbdfab74684c632680079202f88acb3a93322f8fbffbb4c51790ff",
+          "position": "left"
+        }
+      ],
+      "expected_root": "5dc0f1c66ca87c7fafc1fa935467b35a90a21383657c43c7b1373a0a90e72880",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "v2 valid: leaf c in a four-leaf tree, two-step proof"
+    },
+    {
+      "id": "v2_valid_single_leaf",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 1,
+      "proof": [],
+      "expected_root": "586a84be4d3a717f06a0b837e8dbb9a333a3c44a679338dfa29d422569cd1d8c",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "v2 valid: single-leaf tree, empty proof"
+    },
+    {
+      "id": "legacy_gated_valid",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "scheme": "ZAP1_LEGACY_DUPLICATE_ODD",
+      "anchor_height": 3317133,
+      "allow_historical_legacy": false,
+      "note": "historical legacy raw root, scheme-gated, height at cutoff: valid legacy"
+    },
+    {
+      "id": "neg_wrong_root",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "wrong expected root: invalid"
+    },
+    {
+      "id": "neg_wrong_leaf_count",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 3,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "correct raw root but leaf_count 3 != bound 2: invalid (count-binding)"
+    },
+    {
+      "id": "neg_legacy_ungated_downgrade",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "raw root matches but no legacy scheme, height, or flag: downgrade rejected"
+    },
+    {
+      "id": "neg_legacy_height_too_high",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
+      "scheme": "ZAP1_LEGACY_DUPLICATE_ODD",
+      "anchor_height": 3317134,
+      "allow_historical_legacy": false,
+      "note": "legacy scheme but anchor height above cutoff: invalid"
+    },
+    {
+      "id": "neg_tampered_sibling",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "position": "right"
+        }
+      ],
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "scheme": null,
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "tampered sibling: raw root changes: invalid"
+    }
+  ]
+}

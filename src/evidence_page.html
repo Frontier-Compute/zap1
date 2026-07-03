@@ -1,0 +1,643 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZAP1 Evidence Room</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #0f0e0b;
+      --panel: #181610;
+      --panel-2: #211d15;
+      --text: #f8f0df;
+      --muted: #c9bfa8;
+      --line: #3d3426;
+      --gold: #f4b84f;
+      --teal: #23c7ad;
+      --coral: #ef746f;
+      --mint: #a9f0cf;
+      --paper: #fff7e7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(90deg, rgba(244, 184, 79, 0.07) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(35, 199, 173, 0.06) 1px, transparent 1px),
+        var(--ink);
+      background-size: 42px 42px;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--gold);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .toplinks {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .toplinks a,
+    .button {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: rgba(24, 22, 16, 0.82);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .button.primary {
+      border-color: rgba(244, 184, 79, 0.7);
+      background: var(--gold);
+      color: #201506;
+    }
+
+    .hero {
+      min-height: 520px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.02fr) minmax(360px, 0.98fr);
+      gap: 34px;
+      align-items: center;
+      padding: 34px 0 58px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--mint);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 26px;
+      height: 2px;
+      background: var(--teal);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: 56px;
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 650px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 20px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .proof-visual {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(24, 22, 16, 0.86);
+      padding: 18px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    .proof-visual svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: -24px;
+      margin-bottom: 52px;
+    }
+
+    .metric {
+      min-height: 132px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--paper);
+      font-size: 34px;
+      line-height: 1.1;
+    }
+
+    .metric small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .band {
+      border-top: 1px solid var(--line);
+      padding: 54px 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.75fr) minmax(280px, 0.25fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .section-head p,
+    .copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .steps,
+    .checks,
+    .boundary {
+      display: grid;
+      gap: 12px;
+    }
+
+    .steps {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .checks {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .boundary {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .tile {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(24, 22, 16, 0.9);
+      padding: 18px;
+    }
+
+    .tile .num {
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--gold);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 800;
+    }
+
+    .tile h3 {
+      margin: 14px 0 8px;
+      font-size: 18px;
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .check-link {
+      display: flex;
+      min-height: 118px;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      text-decoration: none;
+    }
+
+    .check-link b {
+      color: var(--paper);
+      font-size: 18px;
+    }
+
+    .check-link span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .check-link em {
+      color: var(--teal);
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    .statement {
+      display: grid;
+      grid-template-columns: minmax(0, 0.66fr) minmax(280px, 0.34fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .quote {
+      border-left: 4px solid var(--gold);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 22px;
+      color: var(--paper);
+      font-size: 20px;
+    }
+
+    .quote p {
+      margin: 0;
+    }
+
+    .side-note {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      padding: 20px;
+      color: var(--muted);
+    }
+
+    .side-note strong {
+      display: block;
+      color: var(--paper);
+      margin-bottom: 8px;
+    }
+
+    .footer {
+      padding: 28px 0 42px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    code {
+      color: var(--mint);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .section-head,
+      .statement {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics,
+      .steps,
+      .checks,
+      .boundary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      h1 {
+        font-size: 44px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .shell {
+        width: min(100% - 20px, 1180px);
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .toplinks {
+        justify-content: flex-start;
+      }
+
+      .hero {
+        padding-top: 18px;
+      }
+
+      h1 {
+        font-size: 36px;
+      }
+
+      .lead {
+        font-size: 18px;
+      }
+
+      .metrics,
+      .steps,
+      .checks,
+      .boundary {
+        grid-template-columns: 1fr;
+      }
+
+      .metric {
+        min-height: 112px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="topbar" aria-label="ZAP1 evidence navigation">
+      <a class="brand" href="/" aria-label="ZAP1 home">
+        <span class="brand-mark">Z1</span>
+        <span>ZAP1 Evidence Room</span>
+      </a>
+      <div class="toplinks">
+        <a href="/stats">Stats</a>
+        <a href="/health">Health</a>
+        <a href="/anchor/history">Anchors</a>
+        <a href="https://github.com/Frontier-Compute/zap1">Source</a>
+      </div>
+    </nav>
+
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <div>
+          <div class="eyebrow">retroactive grant proof surface</div>
+          <h1 id="title">ZAP1 makes Zcash attestations inspectable without making private records public.</h1>
+          <p class="lead">
+            A completed, MIT-licensed attestation layer: typed lifecycle events, BLAKE2b Merkle roots, Orchard memo anchors, public proof bundles, and independent verification tooling.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="/anchor/history">Inspect anchor history</a>
+            <a class="button" href="/protocol/info">Read protocol info</a>
+            <a class="button" href="https://github.com/zcash/zips/pull/1243">View ZIP draft</a>
+          </div>
+        </div>
+
+        <figure class="proof-visual" aria-label="ZAP1 proof chain diagram">
+          <svg viewBox="0 0 640 520" role="img" aria-labelledby="diagram-title diagram-desc">
+            <title id="diagram-title">ZAP1 proof chain</title>
+            <desc id="diagram-desc">Lifecycle event commitments become Merkle leaves, roots, Zcash anchors, proof bundles, and verifier output.</desc>
+            <rect x="24" y="24" width="592" height="472" rx="8" fill="#12100c" stroke="#3d3426"/>
+            <path d="M112 110 H528" stroke="#f4b84f" stroke-width="3"/>
+            <path d="M112 210 H528" stroke="#23c7ad" stroke-width="3"/>
+            <path d="M112 310 H528" stroke="#ef746f" stroke-width="3"/>
+            <path d="M112 410 H528" stroke="#a9f0cf" stroke-width="3"/>
+            <g fill="#181610" stroke="#3d3426" stroke-width="2">
+              <rect x="62" y="70" width="148" height="80" rx="8"/>
+              <rect x="246" y="70" width="148" height="80" rx="8"/>
+              <rect x="430" y="70" width="148" height="80" rx="8"/>
+              <rect x="62" y="270" width="148" height="80" rx="8"/>
+              <rect x="246" y="270" width="148" height="80" rx="8"/>
+              <rect x="430" y="270" width="148" height="80" rx="8"/>
+            </g>
+            <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="700">
+              <text x="86" y="104" fill="#f8f0df">event</text>
+              <text x="86" y="128" fill="#c9bfa8">typed input</text>
+              <text x="270" y="104" fill="#f8f0df">leaf</text>
+              <text x="270" y="128" fill="#c9bfa8">BLAKE2b</text>
+              <text x="454" y="104" fill="#f8f0df">root</text>
+              <text x="454" y="128" fill="#c9bfa8">Merkle</text>
+              <text x="86" y="304" fill="#f8f0df">memo</text>
+              <text x="86" y="328" fill="#c9bfa8">Orchard</text>
+              <text x="270" y="304" fill="#f8f0df">bundle</text>
+              <text x="270" y="328" fill="#c9bfa8">proof.json</text>
+              <text x="454" y="304" fill="#f8f0df">verify</text>
+              <text x="454" y="328" fill="#c9bfa8">zap1-verify</text>
+            </g>
+            <g fill="none" stroke="#f8f0df" stroke-width="2">
+              <path d="M210 110 C224 110 232 110 246 110"/>
+              <path d="M394 110 C408 110 416 110 430 110"/>
+              <path d="M504 150 C504 202 136 218 136 270"/>
+              <path d="M210 310 C224 310 232 310 246 310"/>
+              <path d="M394 310 C408 310 416 310 430 310"/>
+            </g>
+            <rect x="62" y="408" width="516" height="48" rx="8" fill="#211d15" stroke="#3d3426"/>
+            <text x="88" y="438" fill="#a9f0cf" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15">reviewer path: /stats -> /anchor/history -> proof bundle -> verifier</text>
+          </svg>
+        </figure>
+      </section>
+
+      <section class="metrics" aria-label="Current ZAP1 metrics">
+        <div class="metric">
+          <span>Mainnet anchors</span>
+          <strong>{TOTAL_ANCHORS}</strong>
+          <small>Anchored roots with Zcash txids</small>
+        </div>
+        <div class="metric">
+          <span>Committed leaves</span>
+          <strong>{TOTAL_LEAVES}</strong>
+          <small>Lifecycle commitments in the tree</small>
+        </div>
+        <div class="metric">
+          <span>Event types</span>
+          <strong>{EVENT_TYPES_TRACKED}</strong>
+          <small>Public stats classes tracked today</small>
+        </div>
+        <div class="metric">
+          <span>Network</span>
+          <strong>{NETWORK}</strong>
+          <small>Protocol {PROTOCOL_VERSION}</small>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="chain-title">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">how the proof moves</div>
+            <h2 id="chain-title">The review path is short on purpose.</h2>
+          </div>
+          <p>This page is generated by the ZAP1 API and pulls aggregate counts from the same database that serves <code>/stats</code>.</p>
+        </div>
+        <div class="steps">
+          <article class="tile">
+            <span class="num">01</span>
+            <h3>Commit an event</h3>
+            <p>Applications create typed lifecycle events without publishing private rows or raw customer data.</p>
+          </article>
+          <article class="tile">
+            <span class="num">02</span>
+            <h3>Hash the leaf</h3>
+            <p>ZAP1 commits event material into BLAKE2b leaf hashes with stable type semantics.</p>
+          </article>
+          <article class="tile">
+            <span class="num">03</span>
+            <h3>Anchor the root</h3>
+            <p>Published roots bind the leaf count and are anchored to Zcash mainnet in ZAP1 structured memos. Anchor txids are published for independent lookup.</p>
+          </article>
+          <article class="tile">
+            <span class="num">04</span>
+            <h3>Publish proofs</h3>
+            <p>Proof bundles expose inclusion material, anchor metadata, and machine-readable verifier input.</p>
+          </article>
+          <article class="tile">
+            <span class="num">05</span>
+            <h3>Verify offline</h3>
+            <p>The <code>zap1-verify</code> crate and <code>verify_proof.py</code> re-walk proofs without trusting the hosted UI. Independent Python, Rust, and TypeScript verifiers are held byte-identical by a CI-gated equivalence corpus.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="checks-title">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">public checks</div>
+            <h2 id="checks-title">Coinholders should not need a private tour.</h2>
+          </div>
+          <p>Every link below is meant to be inspectable from the public surface. No bounty math, no private PoCs, no partner claims.</p>
+        </div>
+        <div class="checks">
+          <a class="check-link" href="/stats">
+            <b>Live stats</b>
+            <span>Leaves, anchors, event counts, network.</span>
+            <em>/stats</em>
+          </a>
+          <a class="check-link" href="/health">
+            <b>Scanner health</b>
+            <span>Operational status and sync state.</span>
+            <em>/health</em>
+          </a>
+          <a class="check-link" href="/anchor/history">
+            <b>Anchor history</b>
+            <span>Root hashes, txids, heights, leaf counts.</span>
+            <em>/anchor/history</em>
+          </a>
+          <a class="check-link" href="/protocol/info">
+            <b>Protocol info</b>
+            <span>Version, hash functions, ZIP status, verifier SDK.</span>
+            <em>/protocol/info</em>
+          </a>
+          <a class="check-link" href="https://crates.io/crates/zap1-verify">
+            <b>Rust verifier</b>
+            <span>Independent inclusion verification crate.</span>
+            <em>crates.io</em>
+          </a>
+          <a class="check-link" href="https://www.npmjs.com/package/@frontiercompute/zap1">
+            <b>JS package</b>
+            <span>Application integration surface.</span>
+            <em>npm</em>
+          </a>
+          <a class="check-link" href="https://github.com/Frontier-Compute/zap1/tree/main/equivalence">
+            <b>Verifier equivalence</b>
+            <span>Frozen corpus; three independent verifiers must agree, checked in CI.</span>
+            <em>GitHub</em>
+          </a>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="boundary-title">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">review boundary</div>
+            <h2 id="boundary-title">What ZAP1 is, and what the grant request is not.</h2>
+          </div>
+          <p>Retroactive funding should reward completed public work. This page keeps the scope clean.</p>
+        </div>
+        <div class="boundary">
+          <article class="tile">
+            <span class="num">yes</span>
+            <h3>Completed infrastructure</h3>
+            <p>Open-source protocol code, live mainnet anchoring, public APIs, docs, tests, packages, and verifier tooling.</p>
+          </article>
+          <article class="tile">
+            <span class="num">yes</span>
+            <h3>Publicly checkable evidence</h3>
+            <p>Current anchor range: <code>{ANCHOR_RANGE}</code>. First block: <code>{FIRST_ANCHOR_BLOCK}</code>. Last block: <code>{LAST_ANCHOR_BLOCK}</code>.</p>
+          </article>
+          <article class="tile">
+            <span class="num">no</span>
+            <h3>Private data theater</h3>
+            <p>No customer rows, no viewing keys, no custody claims, no hidden dashboards required. No vibes were trusted in the making of this page.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="ask-title">
+        <div class="statement">
+          <div class="quote">
+            <p id="ask-title">Retroactive grant ask: fund the completed public ZAP1 attestation layer because it gives Zcash builders a privacy-preserving way to prove lifecycle facts without turning those facts into surveillance exhaust.</p>
+          </div>
+          <aside class="side-note">
+            <strong>Evaluator shortcut</strong>
+            Start with <code>/stats</code>, inspect <code>/anchor/history</code>, open a proof bundle from a leaf, then check it with <code>zap1-verify</code>. The hosted page is a map; the evidence is the protocol output.
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      ZAP1 is MIT licensed. Built for Zcash application attestations that preserve privacy by default.
+    </footer>
+  </div>
+</body>
+</html>

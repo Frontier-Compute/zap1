@@ -1,8 +1,9 @@
 //! zap1-verify - Standalone Merkle proof verifier for the ZAP1 protocol.
 //!
 //! Standalone verification of ZAP1 on-chain attestation commitments.
-//! Implements BLAKE2b-256 leaf hashing for all 9 ZAP1 event types
-//! and Merkle proof path walking with ZAP1 Merkle personalizations.
+//! Implements BLAKE2b-256 leaf hashing for all 12 ZAP1 event types
+//! (core 0x01-0x09 plus agent extension 0x40-0x42) and Merkle proof
+//! path walking with ZAP1 Merkle personalizations.
 //!
 //! Only dependency: `blake2b_simd`.
 
@@ -10,7 +11,7 @@ use blake2b_simd::Params;
 
 // Constants
 
-/// BLAKE2b-256 personalization for leaf hashing (types 0x01-0x08).
+/// BLAKE2b-256 personalization for leaf hashing (types 0x01-0x08, 0x40-0x42).
 /// 13 bytes; blake2b_simd zero-pads to 16 internally.
 pub const DEFAULT_LEAF_PERSONAL: &[u8; 13] = b"NordicShield_";
 
@@ -48,6 +49,9 @@ pub enum EventType {
     Transfer = 0x07,
     Exit = 0x08,
     MerkleRoot = 0x09,
+    AgentRegister = 0x40,
+    AgentPolicy = 0x41,
+    AgentAction = 0x42,
 }
 
 impl EventType {
@@ -63,6 +67,9 @@ impl EventType {
             0x07 => Some(Self::Transfer),
             0x08 => Some(Self::Exit),
             0x09 => Some(Self::MerkleRoot),
+            0x40 => Some(Self::AgentRegister),
+            0x41 => Some(Self::AgentPolicy),
+            0x42 => Some(Self::AgentAction),
             _ => None,
         }
     }
@@ -115,6 +122,26 @@ pub enum EventPayload<'a> {
     },
     /// Type 0x09: raw 32-byte Merkle root (no additional hashing).
     MerkleRoot { root_hash: [u8; 32] },
+    /// `BLAKE2b(0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)`
+    AgentRegister {
+        agent_id: &'a [u8],
+        pubkey_hash: &'a [u8],
+        model_hash: &'a [u8],
+        policy_hash: &'a [u8],
+    },
+    /// `BLAKE2b(0x41 || len(agent_id) || agent_id || policy_version_be_u32 || len(rules_hash) || rules_hash)`
+    AgentPolicy {
+        agent_id: &'a [u8],
+        policy_version: u32,
+        rules_hash: &'a [u8],
+    },
+    /// `BLAKE2b(0x42 || len(agent_id) || agent_id || len(action_type) || action_type || len(input_hash) || input_hash || len(output_hash) || output_hash)`
+    AgentAction {
+        agent_id: &'a [u8],
+        action_type: &'a [u8],
+        input_hash: &'a [u8],
+        output_hash: &'a [u8],
+    },
 }
 
 /// Position of a sibling node in a Merkle proof step.
@@ -199,8 +226,9 @@ fn push_len_prefixed(buf: &mut Vec<u8>, field: &[u8]) {
 
 /// Compute the leaf hash for an ZAP1 event.
 ///
-/// Returns the 32-byte BLAKE2b-256 digest for types 0x01 - 0x08,
-/// or the raw root bytes for type 0x09 (`MERKLE_ROOT`).
+/// Returns the 32-byte BLAKE2b-256 digest for types 0x01 - 0x08 and the
+/// agent extension types 0x40 - 0x42, or the raw root bytes for type 0x09
+/// (`MERKLE_ROOT`).
 pub fn compute_leaf_hash(payload: &EventPayload) -> [u8; 32] {
     compute_leaf_hash_with_personalization(payload, None)
 }
@@ -309,6 +337,67 @@ pub fn compute_leaf_hash_with_personalization(
         }
 
         EventPayload::MerkleRoot { root_hash } => *root_hash,
+
+        EventPayload::AgentRegister {
+            agent_id,
+            pubkey_hash,
+            model_hash,
+            policy_hash,
+        } => {
+            let mut buf = Vec::with_capacity(
+                1 + 2
+                    + agent_id.len()
+                    + 2
+                    + pubkey_hash.len()
+                    + 2
+                    + model_hash.len()
+                    + 2
+                    + policy_hash.len(),
+            );
+            buf.push(EventType::AgentRegister as u8);
+            push_len_prefixed(&mut buf, agent_id);
+            push_len_prefixed(&mut buf, pubkey_hash);
+            push_len_prefixed(&mut buf, model_hash);
+            push_len_prefixed(&mut buf, policy_hash);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::AgentPolicy {
+            agent_id,
+            policy_version,
+            rules_hash,
+        } => {
+            let mut buf = Vec::with_capacity(1 + 2 + agent_id.len() + 4 + 2 + rules_hash.len());
+            buf.push(EventType::AgentPolicy as u8);
+            push_len_prefixed(&mut buf, agent_id);
+            buf.extend_from_slice(&policy_version.to_be_bytes());
+            push_len_prefixed(&mut buf, rules_hash);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::AgentAction {
+            agent_id,
+            action_type,
+            input_hash,
+            output_hash,
+        } => {
+            let mut buf = Vec::with_capacity(
+                1 + 2
+                    + agent_id.len()
+                    + 2
+                    + action_type.len()
+                    + 2
+                    + input_hash.len()
+                    + 2
+                    + output_hash.len(),
+            );
+            buf.push(EventType::AgentAction as u8);
+            push_len_prefixed(&mut buf, agent_id);
+            push_len_prefixed(&mut buf, action_type);
+            push_len_prefixed(&mut buf, input_hash);
+            push_len_prefixed(&mut buf, output_hash);
+            leaf_blake2b(&buf, personalization)
+        }
     }
 }
 
@@ -501,6 +590,85 @@ mod tests {
                 .unwrap();
         let hash = compute_leaf_hash(&EventPayload::MerkleRoot { root_hash: root });
         assert_eq!(hash, root);
+    }
+
+    // Agent extension types 0x40-0x42 - vectors cross-generated with verify_proof.py
+
+    #[test]
+    fn vec_40_agent_register() {
+        let hash = compute_leaf_hash(&EventPayload::AgentRegister {
+            agent_id: b"agent-001",
+            pubkey_hash: "pk".repeat(32).as_bytes(),
+            model_hash: "md".repeat(32).as_bytes(),
+            policy_hash: "pl".repeat(32).as_bytes(),
+        });
+        assert_eq!(
+            bytes_to_hex(&hash),
+            "cb0597ba691e0153c4c3d443bfe5261d865ada819a3b785575b1e298abacda73"
+        );
+    }
+
+    #[test]
+    fn vec_41_agent_policy() {
+        let hash = compute_leaf_hash(&EventPayload::AgentPolicy {
+            agent_id: b"agent-001",
+            policy_version: 7,
+            rules_hash: "ru".repeat(32).as_bytes(),
+        });
+        assert_eq!(
+            bytes_to_hex(&hash),
+            "d097527d78e617ff89e294982541a2e6924dddaa4f8bd12366e360b974563ac7"
+        );
+    }
+
+    #[test]
+    fn vec_42_agent_action() {
+        let hash = compute_leaf_hash(&EventPayload::AgentAction {
+            agent_id: b"agent-001",
+            action_type: b"tool_call",
+            input_hash: "in".repeat(32).as_bytes(),
+            output_hash: "ou".repeat(32).as_bytes(),
+        });
+        assert_eq!(
+            bytes_to_hex(&hash),
+            "c0a48927c82b82c99ae2714b91c49e18c48bb307f68197aae9e508a9d3409c52"
+        );
+    }
+
+    #[test]
+    fn vec_40_agent_register_empty_fields() {
+        let hash = compute_leaf_hash(&EventPayload::AgentRegister {
+            agent_id: b"",
+            pubkey_hash: b"",
+            model_hash: b"",
+            policy_hash: b"",
+        });
+        assert_eq!(
+            bytes_to_hex(&hash),
+            "29a8a4919cede64de7c60a32f37fa527104959f9ce766e12b4908b0e786ade7a"
+        );
+    }
+
+    #[test]
+    fn vec_42_agent_action_short_fields() {
+        let hash = compute_leaf_hash(&EventPayload::AgentAction {
+            agent_id: b"a",
+            action_type: b"b",
+            input_hash: b"c",
+            output_hash: b"d",
+        });
+        assert_eq!(
+            bytes_to_hex(&hash),
+            "02a2e93e93427c99c7da8cde7591f868fba666fb07421ab16265b9e246bcafca"
+        );
+    }
+
+    #[test]
+    fn agent_types_parse_from_byte() {
+        assert_eq!(EventType::from_byte(0x40), Some(EventType::AgentRegister));
+        assert_eq!(EventType::from_byte(0x41), Some(EventType::AgentPolicy));
+        assert_eq!(EventType::from_byte(0x42), Some(EventType::AgentAction));
+        assert_eq!(EventType::from_byte(0x43), None);
     }
 
     // E2E_PROOF_20260327.md - end-to-end proof walk

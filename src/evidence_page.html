@@ -511,6 +511,45 @@
         </div>
       </section>
 
+      <section class="band" aria-labelledby="usecase-title">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">what this is for</div>
+            <h2 id="usecase-title">Receipts for work that machines claim to have done.</h2>
+          </div>
+          <p>Automated systems report what they did, and those reports are normally trust-me claims: a dashboard number an outsider cannot recompute. A ZAP1 receipt is the same claim in checkable form.</p>
+        </div>
+        <div class="steps">
+          <article class="tile">
+            <span class="num">a</span>
+            <h3>Agent actions</h3>
+            <p>Agents commit hash-only receipts of registrations, policies, and actions. The tree carries live <code>AGENT_ACTION</code> leaves today; the worked example below is one of them.</p>
+          </article>
+          <article class="tile">
+            <span class="num">b</span>
+            <h3>Evaluation verdicts</h3>
+            <p>A published Inspect AI hook (<code>inspect-receipts</code> on PyPI) emits hash-only receipts of evaluation outcomes, with an offline checker that returns MATCH or MISMATCH.</p>
+          </article>
+          <article class="tile">
+            <span class="num">c</span>
+            <h3>Lifecycle and payment facts</h3>
+            <p>Machine ownership, deployments, hosting payments, and paid-access events become receipts a counterparty can verify without seeing books, keys, or customer rows.</p>
+          </article>
+        </div>
+        <div class="statement" style="margin-top: 28px;">
+          <div class="quote">
+            <p>Verify a live receipt in under a minute, without trusting this server:</p>
+            <pre style="margin-top: 14px; padding: 14px 16px; border: 1px solid rgba(201, 191, 168, 0.25); border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5;"><code>curl -s https://api.frontiercompute.cash/verify/41792a315c4942da8901d1fd9c12e2598c47ec0e40f3086e2c883ee9c70ead17/proof.json -o proof.json
+python verify_proof.py --proof proof.json</code></pre>
+            <p style="margin-top: 12px;">Expected result: <code>VERIFIED. Count-bound proof is valid. Leaf is included in the published root.</code> The verifier script ships at the <a href="https://github.com/Frontier-Compute/zap1">repo root</a> and re-walks the proof locally.</p>
+          </div>
+          <aside class="side-note">
+            <strong>Scope, stated plainly</strong>
+            The proof checks inclusion against the published root. That root's next on-chain anchor is pending; prior anchors are listed at <code>/anchor/history</code>. A receipt proves the claim was committed and never changed, not that the claim is true.
+          </aside>
+        </div>
+      </section>
+
       <section class="band" aria-labelledby="chain-title">
         <div class="section-head">
           <div>

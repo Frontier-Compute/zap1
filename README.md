@@ -16,9 +16,25 @@ https://api.frontiercompute.cash/stats
 git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash scripts/check.sh
 ```
 
+## Verify a live receipt
+
+Pull a real proof bundle from the live tree and re-walk it locally. No server
+trust, no API key:
+
+```bash
+curl -s https://api.frontiercompute.cash/verify/41792a315c4942da8901d1fd9c12e2598c47ec0e40f3086e2c883ee9c70ead17/proof.json -o proof.json
+python verify_proof.py --proof proof.json
+# VERIFIED. Count-bound proof is valid. Leaf is included in the published root.
+```
+
+The bundle is regenerated against the current published root on every fetch,
+so this command keeps working as the tree grows. The proof shows the receipt
+was committed and never changed; whether the underlying claim is true is
+outside the proof's scope.
+
 ## What it does
 
-- **Structured attestation**: typed lifecycle events (entry, ownership, deployment, payment, transfer, exit) committed to a BLAKE2b Merkle tree with configurable domain separation
+- **Structured attestation**: typed lifecycle events (entry, ownership, deployment, payment, transfer, exit) and agent events (register, policy, action) committed to a BLAKE2b Merkle tree with configurable domain separation
 - **Shielded anchoring**: Merkle roots can be broadcast to Zcash mainnet via
   Orchard shielded memos. Proofs are publicly verifiable, event data stays
   private. Current anchor freshness is reported by `/anchor/status`.
@@ -29,7 +45,7 @@ One production deployment is live on mainnet. The protocol is application-agnost
 
 ## Protocol
 
-Nine event types are tracked in ZAP1:
+Twelve event types are tracked in ZAP1 (nine core, three agent extension):
 
 | Type | Name | Trigger |
 |------|------|---------|
@@ -48,6 +64,14 @@ Nine event types are tracked in ZAP1:
 | `0x0D` | `GOVERNANCE_PROPOSAL` | Governance proposal submitted (reserved) |
 | `0x0E` | `GOVERNANCE_VOTE` | Vote commitment recorded (reserved) |
 | `0x0F` | `GOVERNANCE_RESULT` | Tally result anchored (reserved) |
+| `0x40` | `AGENT_REGISTER` | Agent identity, model, and policy hashes committed |
+| `0x41` | `AGENT_POLICY` | Agent policy version and rules hash committed |
+| `0x42` | `AGENT_ACTION` | Agent action with input and output hashes committed |
+
+Core and agent types are all supported by the offline verifiers
+(`verify_proof.py`, `zap1-verify`). Three independent verifier
+implementations (Python, Rust, TypeScript) are held byte-identical by the
+CI-gated [equivalence corpus](equivalence/).
 
 All hashes use BLAKE2b-256 with `NordicShield_` personalization. Merkle nodes use `NordicShield_MRK`. Full spec: [ONCHAIN_PROTOCOL.md](ONCHAIN_PROTOCOL.md).
 

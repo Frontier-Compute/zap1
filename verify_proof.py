@@ -12,10 +12,11 @@ Usage:
 The proof JSON file should contain an array of steps:
   [{"hash": "aabb...", "position": "left|right"}, ...]
 
-Supports all 9 ZAP1 event types (ONCHAIN_PROTOCOL.md v2.0.0):
+Supports all 12 ZAP1 event types (ONCHAIN_PROTOCOL.md):
   0x01 PROGRAM_ENTRY, 0x02 OWNERSHIP_ATTEST, 0x03 CONTRACT_ANCHOR,
   0x04 DEPLOYMENT, 0x05 HOSTING_PAYMENT, 0x06 SHIELD_RENEWAL,
-  0x07 TRANSFER, 0x08 EXIT, 0x09 MERKLE_ROOT
+  0x07 TRANSFER, 0x08 EXIT, 0x09 MERKLE_ROOT,
+  0x40 AGENT_REGISTER, 0x41 AGENT_POLICY, 0x42 AGENT_ACTION
 
 Hash: BLAKE2b-256, personalization "NordicShield_" (leaf),
 "NordicShield_MRK" (node), and "NordicShield_RTK" (root commitment).
@@ -82,6 +83,24 @@ def hash_transfer(old_wallet: str, new_wallet: str, serial_number: str) -> bytes
 
 def hash_exit(wallet_hash: str, serial_number: str, timestamp: int) -> bytes:
     return _hash(0x08, _len_prefix(wallet_hash) + _len_prefix(serial_number) + struct.pack(">Q", timestamp))
+
+
+def hash_agent_register(agent_id: str, pubkey_hash: str, model_hash: str, policy_hash: str) -> bytes:
+    return _hash(
+        0x40,
+        _len_prefix(agent_id) + _len_prefix(pubkey_hash) + _len_prefix(model_hash) + _len_prefix(policy_hash),
+    )
+
+
+def hash_agent_policy(agent_id: str, policy_version: int, rules_hash: str) -> bytes:
+    return _hash(0x41, _len_prefix(agent_id) + struct.pack(">I", policy_version) + _len_prefix(rules_hash))
+
+
+def hash_agent_action(agent_id: str, action_type: str, input_hash: str, output_hash: str) -> bytes:
+    return _hash(
+        0x42,
+        _len_prefix(agent_id) + _len_prefix(action_type) + _len_prefix(input_hash) + _len_prefix(output_hash),
+    )
 
 
 def hash_node(left: bytes, right: bytes) -> bytes:
@@ -171,6 +190,18 @@ def compute_leaf(args) -> tuple:
         h = hash_exit(args.wallet_hash, args.serial, args.timestamp)
         return h, f"EXIT wallet={args.wallet_hash} serial={args.serial} ts={args.timestamp}"
 
+    if et == "AGENT_REGISTER":
+        h = hash_agent_register(args.agent_id, args.pubkey_hash, args.model_hash, args.policy_hash)
+        return h, f"AGENT_REGISTER agent={args.agent_id}"
+
+    if et == "AGENT_POLICY":
+        h = hash_agent_policy(args.agent_id, args.policy_version, args.rules_hash)
+        return h, f"AGENT_POLICY agent={args.agent_id} version={args.policy_version}"
+
+    if et == "AGENT_ACTION":
+        h = hash_agent_action(args.agent_id, args.action_type, args.input_hash, args.output_hash)
+        return h, f"AGENT_ACTION agent={args.agent_id} action={args.action_type}"
+
     # Legacy: auto-detect from args
     if args.wallet_hash and args.serial:
         h = hash_ownership_attest(args.wallet_hash, args.serial)
@@ -187,7 +218,7 @@ def compute_leaf(args) -> tuple:
 def main():
     parser = argparse.ArgumentParser(description="ZAP1 Merkle Proof Verifier (all 9 event types)")
     parser.add_argument("--leaf-hash", help="Hex-encoded leaf hash (if known)")
-    parser.add_argument("--event-type", help="Event type: PROGRAM_ENTRY, OWNERSHIP_ATTEST, CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT")
+    parser.add_argument("--event-type", help="Event type: PROGRAM_ENTRY, OWNERSHIP_ATTEST, CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT, AGENT_REGISTER, AGENT_POLICY, AGENT_ACTION")
     parser.add_argument("--wallet-hash", help="Wallet hash string")
     parser.add_argument("--serial", help="Serial number")
     parser.add_argument("--contract-sha256", help="Contract SHA-256 (for CONTRACT_ANCHOR)")
@@ -196,6 +227,15 @@ def main():
     parser.add_argument("--year", type=int, help="Year (for HOSTING_PAYMENT, SHIELD_RENEWAL)")
     parser.add_argument("--new-wallet-hash", help="New wallet hash (for TRANSFER)")
     parser.add_argument("--timestamp", type=int, default=0, help="Unix timestamp (for DEPLOYMENT, EXIT)")
+    parser.add_argument("--agent-id", help="Agent identifier (for AGENT_* types)")
+    parser.add_argument("--pubkey-hash", help="Agent pubkey hash (for AGENT_REGISTER)")
+    parser.add_argument("--model-hash", help="Agent model hash (for AGENT_REGISTER)")
+    parser.add_argument("--policy-hash", help="Agent policy hash (for AGENT_REGISTER)")
+    parser.add_argument("--policy-version", type=int, help="Policy version (for AGENT_POLICY)")
+    parser.add_argument("--rules-hash", help="Policy rules hash (for AGENT_POLICY)")
+    parser.add_argument("--action-type", help="Action type label (for AGENT_ACTION)")
+    parser.add_argument("--input-hash", help="Action input hash (for AGENT_ACTION)")
+    parser.add_argument("--output-hash", help="Action output hash (for AGENT_ACTION)")
     parser.add_argument("--proof", required=True, help="Path to proof JSON file")
     parser.add_argument("--root", help="Hex-encoded expected Merkle root")
     parser.add_argument("--leaf-count", type=int, help="Leaf count bound into the ZAP1 v2 root")
@@ -247,6 +287,7 @@ def main():
             args.contract_sha256,
             args.facility_id,
             args.new_wallet_hash,
+            args.agent_id,
         ]
     ):
         leaf_hash = bytes.fromhex(bundle_leaf["hash"])

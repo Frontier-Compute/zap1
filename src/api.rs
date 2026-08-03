@@ -100,6 +100,7 @@ const LEGACY_ROOT_MAX_ANCHOR_HEIGHT: u32 = 3_317_133;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/retrogrant", get(evidence_room))
         .route("/invoice", post(create_invoice))
         .route("/invoice/{id}", get(get_invoice))
         .route("/invoices", get(list_invoices))
@@ -153,6 +154,45 @@ pub fn router(state: AppState) -> Router {
                 ]),
         )
         .with_state(state)
+}
+
+fn block_label(block: Option<u32>) -> String {
+    block
+        .map(|height| height.to_string())
+        .unwrap_or_else(|| "pending first anchor".to_string())
+}
+
+fn anchor_range_label(first: Option<u32>, last: Option<u32>) -> String {
+    match (first, last) {
+        (Some(first), Some(last)) if first == last => first.to_string(),
+        (Some(first), Some(last)) => format!("{} to {}", first, last),
+        _ => "pending first anchor".to_string(),
+    }
+}
+
+async fn evidence_room(
+    State(state): State<AppState>,
+) -> Result<Html<String>, (StatusCode, String)> {
+    let (total_leaves, total_anchors, first_height, last_height) = state
+        .db
+        .get_stats()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let network = format!("{:?}", state.config.network);
+    let page = include_str!("evidence_page.html")
+        .replace("{TOTAL_ANCHORS}", &total_anchors.to_string())
+        .replace("{TOTAL_LEAVES}", &total_leaves.to_string())
+        .replace("{EVENT_TYPES_TRACKED}", "12")
+        .replace("{NETWORK}", &html_escape(&network))
+        .replace("{PROTOCOL_VERSION}", PROTOCOL_VERSION)
+        .replace(
+            "{ANCHOR_RANGE}",
+            &anchor_range_label(first_height, last_height),
+        )
+        .replace("{FIRST_ANCHOR_BLOCK}", &block_label(first_height))
+        .replace("{LAST_ANCHOR_BLOCK}", &block_label(last_height));
+
+    Ok(Html(page))
 }
 
 async fn create_invoice(

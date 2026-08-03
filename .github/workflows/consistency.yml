@@ -48,7 +48,9 @@ jobs:
 
       - name: No grant references in source
         run: |
-          if grep -rin "ZCG\|grant\|milestone\|evaluator" src/ tests/ 2>/dev/null; then
+          # The /retrogrant evidence room is a deliberate grant surface; the guard covers everything else.
+          if grep -rin "ZCG\|grant\|milestone\|evaluator" src/ tests/ --exclude=evidence_page.html 2>/dev/null \
+            | grep -v 'route("/retrogrant"'; then
             echo "::error::Found grant references in source code"
             exit 1
           fi

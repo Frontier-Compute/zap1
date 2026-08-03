@@ -45,7 +45,7 @@ One production deployment is live on mainnet. The protocol is application-agnost
 
 ## Protocol
 
-Twelve event types are tracked in ZAP1 (nine core, three agent extension):
+ZAP1 defines 18 event types: 15 deployed and 3 reserved for Crosslink:
 
 | Type | Name | Trigger |
 |------|------|---------|
@@ -61,17 +61,17 @@ Twelve event types are tracked in ZAP1 (nine core, three agent extension):
 | `0x0A` | `STAKING_DEPOSIT` | Validator stake locked (reserved, not yet tracked) |
 | `0x0B` | `STAKING_WITHDRAW` | Validator stake unlocked (reserved) |
 | `0x0C` | `STAKING_REWARD` | Block reward recorded (reserved) |
-| `0x0D` | `GOVERNANCE_PROPOSAL` | Governance proposal submitted (reserved) |
-| `0x0E` | `GOVERNANCE_VOTE` | Vote commitment recorded (reserved) |
-| `0x0F` | `GOVERNANCE_RESULT` | Tally result anchored (reserved) |
+| `0x0D` | `GOVERNANCE_PROPOSAL` | Governance proposal submitted |
+| `0x0E` | `GOVERNANCE_VOTE` | Vote commitment recorded |
+| `0x0F` | `GOVERNANCE_RESULT` | Tally result anchored |
 | `0x40` | `AGENT_REGISTER` | Agent identity, model, and policy hashes committed |
 | `0x41` | `AGENT_POLICY` | Agent policy version and rules hash committed |
 | `0x42` | `AGENT_ACTION` | Agent action with input and output hashes committed |
 
-Core and agent types are all supported by the offline verifiers
-(`verify_proof.py`, `zap1-verify`). Three independent verifier
-implementations (Python, Rust, TypeScript) are held byte-identical by the
-CI-gated [equivalence corpus](equivalence/).
+Proof-path verification is event-type agnostic. The deployed Rust service
+implements payload hashing for all 15 active types; the three Crosslink types
+remain reserved. Three independent verifier implementations (Python, Rust,
+TypeScript) are checked against the CI-gated [equivalence corpus](equivalence/).
 
 All hashes use BLAKE2b-256 with `NordicShield_` personalization. Merkle nodes use `NordicShield_MRK`. Full spec: [ONCHAIN_PROTOCOL.md](ONCHAIN_PROTOCOL.md).
 

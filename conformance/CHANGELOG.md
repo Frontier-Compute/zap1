@@ -19,7 +19,7 @@ Changes to the ZAP1 protocol contract, API schemas, and conformance fixtures.
 ### Protocol
 - Protocol marker: ZAP1 (legacy NSM1 accepted on decode)
 - Hash function: BLAKE2b-256 with NordicShield_ personalization
-- Wire format: ZAP1:{type}:{hash} (73 bytes)
+- Wire format: ZAP1:{type}:{hash} (72 bytes)
 - Proof bundle version: 2
 
 ### Stability

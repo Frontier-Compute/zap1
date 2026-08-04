@@ -35,10 +35,12 @@ ZAP1:{type}:{payload_hash}
 Where:
 
 - `ZAP1` is the protocol marker (legacy memos use `NSM1`, accepted during decode)
-- `{type}` is the two-digit lowercase hex event type byte (01-0c)
+- `{type}` is the two-digit lowercase hex event type byte allocated below
 - `{payload_hash}` is the 64-character hex encoding of the 32-byte BLAKE2b-256 payload hash
 
-Total memo size: 73 bytes (4 + 1 + 2 + 1 + 64 + 1 separators). Fits in any Zcash shielded memo (512 bytes pre-ZIP 231, 16 KiB post-ZIP 231).
+Total memo size: 72 bytes (4-byte marker + two 1-byte separators + 2-byte
+type hex + 64-byte payload hex). Fits in any Zcash shielded memo (512 bytes
+pre-ZIP 231, 16 KiB post-ZIP 231).
 
 The payload hash is computed per event type using BLAKE2b-256 with `NordicShield_` personalization. See EVENT_SCHEMA.md for the full hash construction rules per type.
 
@@ -56,10 +58,16 @@ Transaction types:
 | `0x08` | `EXIT` | `hash(wallet_hash || serial_number || timestamp)` | Active |
 | `0x09` | `MERKLE_ROOT` | raw 32-byte Merkle root commitment | Active |
 | `0x0A` | `STAKING_DEPOSIT` | `hash(wallet_hash || amount_zat_be || validator_id)` | Reserved for Crosslink |
-| `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be)` | Reserved for Crosslink |
-| `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || epoch_be || reward_zat_be)` | Reserved for Crosslink |
+| `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be || validator_id)` | Reserved for Crosslink |
+| `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || reward_zat_be || epoch_be)` | Reserved for Crosslink |
+| `0x0D` | `GOVERNANCE_PROPOSAL` | `hash(wallet_hash || proposal_id || proposal_hash)` | Active |
+| `0x0E` | `GOVERNANCE_VOTE` | `hash(wallet_hash || proposal_id || vote_commitment)` | Active |
+| `0x0F` | `GOVERNANCE_RESULT` | `hash(wallet_hash || proposal_id || result_hash)` | Active |
+| `0x40` | `AGENT_REGISTER` | `hash(agent_id || pubkey_hash || model_hash || policy_hash)` | Active |
+| `0x41` | `AGENT_POLICY` | `hash(agent_id || policy_version_be || rules_hash)` | Active |
+| `0x42` | `AGENT_ACTION` | `hash(agent_id || action_type || input_hash || output_hash)` | Active |
 
-The protocol defines 21 event types across 7 families.
+The protocol defines 18 event types: 15 deployed and 3 reserved for Crosslink.
 
 ## 3. Hash Construction
 
@@ -81,9 +89,15 @@ SHIELD_RENEWAL     = BLAKE2b_32(0x06 || len(wallet_hash) || wallet_hash || year_
 TRANSFER           = BLAKE2b_32(0x07 || len(old_wallet) || old_wallet || len(new_wallet) || new_wallet || len(serial_number) || serial_number)
 EXIT               = BLAKE2b_32(0x08 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number || timestamp_be)
 MERKLE_ROOT        = current count-bound Merkle root commitment
-STAKING_DEPOSIT    = BLAKE2b_32(0x0A || wallet_hash || amount_zat_be || validator_id)
-STAKING_WITHDRAW   = BLAKE2b_32(0x0B || wallet_hash || amount_zat_be)
-STAKING_REWARD     = BLAKE2b_32(0x0C || wallet_hash || epoch_be || reward_zat_be)
+STAKING_DEPOSIT    = BLAKE2b_32(0x0A || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+STAKING_WITHDRAW   = BLAKE2b_32(0x0B || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+STAKING_REWARD     = BLAKE2b_32(0x0C || len(wallet_hash) || wallet_hash || reward_zat_be || epoch_be)
+GOVERNANCE_PROPOSAL = BLAKE2b_32(0x0D || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(proposal_hash) || proposal_hash)
+GOVERNANCE_VOTE     = BLAKE2b_32(0x0E || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(vote_commitment) || vote_commitment)
+GOVERNANCE_RESULT   = BLAKE2b_32(0x0F || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(result_hash) || result_hash)
+AGENT_REGISTER      = BLAKE2b_32(0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)
+AGENT_POLICY        = BLAKE2b_32(0x41 || len(agent_id) || agent_id || policy_version_be || len(rules_hash) || rules_hash)
+AGENT_ACTION        = BLAKE2b_32(0x42 || len(agent_id) || agent_id || len(action_type) || action_type || len(input_hash) || input_hash || len(output_hash) || output_hash)
 ```
 
 Implementation notes:
@@ -91,7 +105,11 @@ Implementation notes:
 - `wallet_hash` is an operator-generated hash derived from the participant wallet
 - `serial_hash` in the memo layout is `BLAKE2b_32(serial_number)` when a serial exists
 - `contract_sha256` is the SHA-256 digest of the hosted contract artifact
-- integer fields are big-endian
+- strings are encoded as UTF-8 bytes; `len(value)` is the byte length encoded
+  as an unsigned 16-bit big-endian integer
+- `timestamp` and `amount_zat` are unsigned 64-bit big-endian integers
+- `month`, `year`, `epoch`, and `policy_version` are unsigned 32-bit
+  big-endian integers
 - no memo payload includes participant name, email, phone number, or postal address
 - `STAKING_DEPOSIT`, `STAKING_WITHDRAW`, and `STAKING_REWARD` are reserved for Crosslink. They are not yet active, and their hash construction is preliminary and subject to change when the Crosslink staking protocol finalizes.
 
@@ -222,7 +240,11 @@ For Wyoming filing purposes, the protocol is the DAO's audit and commitment laye
 
 ## 11. API Reference
 
-The deployed API exposes event insertion,  lifecycle lookup,  and operational stats.  21 event types across 7 families.  This section documents the protocol-level contract for those endpoints.
+The deployed `/protocol/info` endpoint reports the 18-type registry
+(15 deployed, 3 reserved). Event insertion and lifecycle endpoints support
+their documented classes, while `/stats` currently aggregates the nine core
+classes `0x01`-`0x09`. This section documents the protocol-level contract
+for those endpoints.
 
 ### `POST /event`
 
@@ -375,13 +397,19 @@ The credential profile depends on the proof profile and is not expected to deplo
 
 ## 13. Versioning and Extension Policy
 
-- The event type registry (0x01 - 0x0C) is append-only. Existing types are never redefined.
-- New event types are allocated by incrementing the type byte. Types 0x0D - 0xFF are reserved.
+- The allocated registry entries (`0x01`-`0x0F`, `0x40`-`0x42`) are
+  append-only. Existing types are never redefined.
+- `0x00` is invalid and reserved. Unallocated type bytes
+  (`0x10`-`0x3F`, `0x43`-`0xFF`) are reserved for future allocation.
 - Profiles are namespaced: `base`, `proof`, `credential`. New profiles do not modify the base profile.
-- Hash construction rules for the base profile are frozen at v2.2.0. Changes require a new major version.
+- Hash construction rules for the base profile are frozen at v3.0.0. Changes require a new major version.
 - The `NordicShield_` personalization is deployment-specific. Other deployments may use different personalization strings without conflicting with the protocol specification. The zap1-verify SDK (v0.2.0+) accepts configurable personalization.
 
 ## Changelog
+
+### 3.0.0 documentation errata (2026-08-03)
+- Reconciled the registry text and tables with the 18 implemented memo types
+- Recorded the 15 deployed / 3 Crosslink-reserved split
 
 ### 3.0.0 (2026-03-31)
 - Added type byte prefix to leaf hash construction (Section 3)

@@ -182,7 +182,7 @@ async fn evidence_room(
     let page = include_str!("evidence_page.html")
         .replace("{TOTAL_ANCHORS}", &total_anchors.to_string())
         .replace("{TOTAL_LEAVES}", &total_leaves.to_string())
-        .replace("{EVENT_TYPES_TRACKED}", "12")
+        .replace("{EVENT_TYPES_TRACKED}", "9")
         .replace("{NETWORK}", &html_escape(&network))
         .replace("{PROTOCOL_VERSION}", PROTOCOL_VERSION)
         .replace(

@@ -32,12 +32,11 @@ LEAF_PERSONAL = b"NordicShield_\x00\x00\x00"
 NODE_PERSONAL = b"NordicShield_MRK"
 ROOT_PERSONAL = b"NordicShield_RTK"
 
-# Valid deployed type range per ZIP 1243
-VALID_TYPE_MIN = 0x01
-VALID_TYPE_MAX = 0x45  # upper bound from ZIP draft binary layout
-
-# Deployed event types
-DEPLOYED_TYPES = list(range(0x01, 0x10))  # 0x01-0x0F
+# Canonical event-type registry. Allocated types are valid memo types; reserved
+# Crosslink types are allocated but not deployed.
+ALLOCATED_TYPES = frozenset((*range(0x01, 0x10), 0x40, 0x41, 0x42))
+RESERVED_TYPES = frozenset((0x0A, 0x0B, 0x0C))
+DEPLOYED_TYPES = ALLOCATED_TYPES - RESERVED_TYPES
 
 passed = 0
 failed = 0
@@ -278,41 +277,61 @@ def encode_memo(type_byte, payload_hex):
 def test_section_1():
     print("\n== Section 1: Memo Envelope Format ==\n")
 
-    # 1.1 Type byte range - valid types
-    for tb, name in [(0x01, "PROGRAM_ENTRY"), (0x09, "MERKLE_ROOT"), (0x0F, "GOVERNANCE_RESULT")]:
-        ok = VALID_TYPE_MIN <= tb <= VALID_TYPE_MAX
-        result("1.1", f"Type byte 0x{tb:02x} ({name}) in valid range", ok)
+    # 1.1 Registry partitions are exact and disjoint.
+    expected_allocated = frozenset((*range(0x01, 0x10), 0x40, 0x41, 0x42))
+    expected_reserved = frozenset((0x0A, 0x0B, 0x0C))
+    expected_deployed = frozenset(
+        (*range(0x01, 0x0A), 0x0D, 0x0E, 0x0F, 0x40, 0x41, 0x42)
+    )
+    result("1.1", "Allocated event-type set is exact", ALLOCATED_TYPES == expected_allocated)
+    result("1.2", "Reserved Crosslink set is exact", RESERVED_TYPES == expected_reserved)
+    result("1.3", "Deployed event-type set is exact", DEPLOYED_TYPES == expected_deployed)
+    result(
+        "1.4",
+        "Deployed and reserved types partition the allocated registry",
+        DEPLOYED_TYPES.isdisjoint(RESERVED_TYPES)
+        and DEPLOYED_TYPES | RESERVED_TYPES == ALLOCATED_TYPES,
+    )
 
-    # 1.2 Type byte 0x00 is invalid
-    result("1.2", "Type byte 0x00 rejected (below range)", 0x00 < VALID_TYPE_MIN)
+    # 1.5 Published vectors cover deployed, reserved, and invalid holes.
+    vectors_path = os.path.join(DIR, "zip1243_vectors.json")
+    with open(vectors_path) as f:
+        vectors = json.load(f)["section_1_memo_envelope"]["vectors"]
+    type_vectors = [vec for vec in vectors if "type_byte" in vec]
+    for vec in type_vectors:
+        tb = vec["type_byte"]
+        actual = {
+            "valid": tb in ALLOCATED_TYPES,
+            "deployed": tb in DEPLOYED_TYPES,
+            "reserved": tb in RESERVED_TYPES,
+        }
+        expected = {key: vec[key] for key in actual}
+        result(f"V{vec['id']}", vec["description"], actual == expected)
 
-    # 1.3 Type byte 0x46 is invalid
-    result("1.3", "Type byte 0x46 rejected (above range)", 0x46 > VALID_TYPE_MAX)
-
-    # 1.4 Memo fits in 512-byte field
+    # 1.6 Memo fits in 512-byte field
     sample_memo = "ZAP1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b"
     memo_bytes = len(sample_memo.encode("utf-8"))
-    result("1.4", f"Memo wire format ({memo_bytes} bytes) fits 512-byte memo field", memo_bytes <= 512)
+    result("1.6", f"Memo wire format ({memo_bytes} bytes) fits 512-byte memo field", memo_bytes <= 512)
 
-    # 1.5 Memo is constant-size for all event types (72 bytes for the ASCII representation)
-    for tb in [0x01, 0x05, 0x09, 0x0F]:
+    # 1.7 Memo is constant-size for all allocated types (72 bytes for ASCII).
+    for tb in sorted(ALLOCATED_TYPES):
         memo = encode_memo(tb, "aa" * 32)
         length = len(memo.encode("utf-8"))
-        result("1.5", f"Memo for type 0x{tb:02x} is 72 bytes", length == 72)
+        result("1.7", f"Memo for type 0x{tb:02x} is 72 bytes", length == 72)
 
-    # 1.6 Version byte is 0x01
-    result("1.6", "Binary layout version byte is 0x01", True,
+    # 1.8 Version byte is 0x01
+    result("1.8", "Binary layout version byte is 0x01", True,
            "version field = 0x01 per ZIP 1243 spec")
 
-    # 1.7 Integers are big-endian
+    # 1.9 Integers are big-endian
     val = 2026
     encoded = u32_be(val)
-    result("1.7", "Integer encoding is big-endian", encoded == b"\x00\x00\x07\xea")
+    result("1.9", "Integer encoding is big-endian", encoded == b"\x00\x00\x07\xea")
 
-    # 1.8 Padding is null bytes
+    # 1.10 Padding is null bytes
     memo_raw = sample_memo.encode("utf-8")
     padded = memo_raw + b"\x00" * (512 - len(memo_raw))
-    result("1.8", "Padding to 512 bytes uses null bytes", len(padded) == 512 and padded[-1] == 0)
+    result("1.10", "Padding to 512 bytes uses null bytes", len(padded) == 512 and padded[-1] == 0)
 
 
 # Section 2: Hash Construction

@@ -1,7 +1,8 @@
 //! Webhook delivery system for ZAP1 lifecycle events.
 //!
 //! Register URLs to receive POST notifications when leaves are created
-//! or anchors are confirmed. Payloads are signed with a keyed BLAKE2b MAC.
+//! or anchor transaction references are recorded. Payloads are signed with a
+//! keyed BLAKE2b MAC.
 
 use std::sync::Arc;
 
@@ -46,7 +47,7 @@ pub async fn deliver_leaf_event(
     }
 }
 
-/// Deliver a webhook notification for an anchor confirmation.
+/// Deliver a webhook notification for a recorded root-to-transaction reference.
 pub async fn deliver_anchor_event(db: &Arc<Db>, root: &str, txid: &str, height: Option<u32>) {
     let hooks = match db.list_webhooks() {
         Ok(h) => h,
@@ -55,6 +56,7 @@ pub async fn deliver_anchor_event(db: &Arc<Db>, root: &str, txid: &str, height: 
 
     let payload = serde_json::json!({
         "event": "anchor_confirmed",
+        "event_semantics": "root_to_transaction_reference_recorded",
         "root": root,
         "txid": txid,
         "height": height,

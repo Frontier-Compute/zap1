@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""
-Explorer consumer example.
-
-Shows how a block explorer indexes ZAP1 attestation events.
-Polls the /events endpoint and builds a local index of attestations.
-"""
+"""Explorer example for the redacted public commitment feed."""
 
 import json
 import urllib.request
+from urllib.parse import quote
 
 API = "https://api.frontiercompute.cash"
 
 
 def fetch_events(limit: int = 50) -> list:
     """Fetch recent attestation events."""
-    url = f"{API}/events?limit={limit}"
+    url = f"{API}/events?limit={quote(str(limit), safe='')}"
     with urllib.request.urlopen(url, timeout=10) as resp:
         data = json.load(resp)
     return data.get("events", [])
@@ -22,20 +18,20 @@ def fetch_events(limit: int = 50) -> list:
 
 def fetch_proof(leaf_hash: str) -> dict:
     """Fetch a proof bundle for verification."""
-    url = f"{API}/verify/{leaf_hash}/proof.json"
+    url = f"{API}/verify/{quote(leaf_hash, safe='')}/proof.json"
     with urllib.request.urlopen(url, timeout=10) as resp:
         return json.load(resp)
 
 
 def main():
     events = fetch_events(limit=20)
-    print(f"found {len(events)} attestation events\n")
+    print(f"found {len(events)} public commitment records\n")
 
     for event in events:
-        print(f"  {event['event_type']:20s} {event['leaf_hash'][:16]}... wallet={event['wallet_hash'][:16]}")
-
-        if event.get("serial_number"):
-            print(f"  {'':20s} serial={event['serial_number']}")
+        print(
+            f"  claimed type {event['event_type']:20s} "
+            f"{event['leaf_hash'][:16]}..."
+        )
 
     # fetch one proof bundle to show the data path
     if events:
@@ -45,7 +41,8 @@ def main():
         print(f"  root: {proof['root']['hash'][:16]}...")
         print(f"  anchor: block {proof['anchor'].get('height', 'unknown')}")
         print(f"  steps: {len(proof['proof'])}")
-        print(f"  (cryptographic verification: use zap1_audit --bundle)")
+        print("  local bundle consistency: use examples/verify_proof.py")
+        print("  event type and subject preimages are withheld from this public feed")
 
 
 if __name__ == "__main__":

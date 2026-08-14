@@ -6,13 +6,17 @@ Depends on: Zcash Shielded Assets (ZIP 226, ZIP 227) protocol activation
 
 ## Overview
 
-When Zcash Shielded Assets ship, asset issuers will need a way to attest properties of their assets on-chain without revealing holder identities or transaction details. ZAP1 provides this layer: structured attestation events committed to a Merkle tree and anchored to Zcash via shielded memos.
+If Zcash Shielded Assets ship, applications may want commitments to
+issuer-supplied asset claims. This note sketches one possible application
+layer. It is not implemented.
 
-This document defines ZAP1 event types for the ZSA lifecycle, extending the registry into the `0x10`-`0x1F` range. These types are reserved and will activate when the ZSA protocol is deployed on mainnet.
+This document proposes ZAP1 event types for the ZSA lifecycle in the `0x10`-`0x1F` range. These bytes are unassigned in the active registry. They are not accepted by the API.
 
-Grounding: all types below map directly to ZIP 226/227 consensus objects. `AssetId = (issuer, assetDescHash)` per ZIP 227. Issuance is transparent and issuer-authorized. Burn is the provable supply-reduction mechanism (ZIP 226). Key rotation is not supported - compromise handling is "finalize old issuer, move to new issuer" (ZIP 227).
+The protocol-core sketches refer to concepts in ZIP 226 and ZIP 227. The bridge,
+reserve, incident, metadata, and audit rows are application claims, not ZSA
+consensus objects. A ZAP1 inclusion proof would not establish their truth.
 
-## Proposed Event Types
+## Proposed Event Types, Not Allocated
 
 ### Protocol-core (maps to ZIP 226/227 consensus concepts)
 
@@ -84,33 +88,49 @@ Fields:
 
 ### Supply Tracking
 
-An institutional issuer creates a ZSA and commits every issuance and burn to ZAP1. The supply snapshot at any point is provable from the Merkle tree. Auditors verify the supply trail from the proof path without seeing individual holder balances.
+An issuer could submit claims about issuance, burn, and supply. Inclusion proofs
+could show that selected disclosed claims are consistent with a supplied root.
+They could not prove supply or completeness without an independent ZSA
+transaction/state verifier and a complete admission rule.
 
 ### Bridge Operations
 
-A cross-chain bridge locks collateral on an external chain and mints ZSA tokens on Zcash. Each lock and release is attested via `ZSA_RESERVE_LOCK` and `ZSA_RESERVE_RELEASE`. The Solidity verifier (`zap1-verify-sol`) can verify these attestations on the external chain, creating a two-way audit surface.
+A bridge could commit operator claims about locks and releases. A Solidity
+Merkle verifier could check inclusion under a root registered on that chain.
+It would not prove external collateral, ZSA issuance, or root authenticity
+without separate chain-verification and bridge policies.
 
 ### Issuer Key Compromise
 
-ZIP 227 does not support key rotation. If an issuer key is compromised, the response is to finalize the old asset and issue under a new key. `ZSA_COMPROMISE_NOTICE` and `ZSA_SUCCESSOR_ISSUER` create a permanent, verifiable record of this transition in the Merkle tree.
+The proposed compromise and successor rows would be issuer-submitted notices.
+They would not prove compromise, finalization, or control of a successor key.
 
 ### Cross-Chain Proof
 
-Using `zap1-verify-sol`, an EVM smart contract can verify that a ZSA was issued, that its supply matches a snapshot, or that a bridge reserve was locked - all without a custodian, a guardian set, or exposing the Zcash transaction graph.
+An EVM verifier could check inclusion of a future ZSA claim under a registered root. That would not prove issuance, supply, or reserves without a separate source-verification policy.
 
 ## Relationship to ZSA Protocol
 
-ZAP1 ZSA events are application-layer attestations, not consensus-layer operations. They do not modify ZSA issuance or transfer mechanics. They sit above the asset protocol and provide a verifiable audit surface.
+Proposed ZAP1 ZSA events are application-layer claims, not consensus-layer
+operations. They would not modify or independently verify issuance, transfer,
+burn, reserves, or supply.
 
-The ZSA protocol handles: issuance, transfer, burn at the consensus layer.  
-ZAP1 handles: attestation, supply proof, compliance, audit at the application layer.
+The proposed split is:
+
+- ZSA consensus and dedicated chain tooling establish consensus state
+- ZAP1 could commit selected application claims for later disclosure
+
+No compliance, supply, reserve, or audit conclusion follows from the ZAP1
+commitment alone.
 
 ## Activation
 
-These event types will activate when:
+Allocation would require:
 1. ZSA protocol is deployed on Zcash mainnet
 2. The `AssetId` and `issuer` key formats are finalized in ZIP 226/227
 3. Hash constructions are validated against the ZSA issuance key derivation
 4. Test vectors are published matching live ZSA issuance transactions
 
-Until then, types `0x10`-`0x1F` are reserved in the ZAP1 registry. The API will reject events in this range.
+Until then, types `0x10` through `0x1F` remain unassigned. The API rejects
+events in this range. This proposal is not evidence of ZSA activation,
+integration, or external adoption.

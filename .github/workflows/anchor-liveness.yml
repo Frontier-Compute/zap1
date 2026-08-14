@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ZAP1_API_BASE: https://api.frontiercompute.cash
-      ZAP1_REQUIRE_FRESH_ANCHOR: "0"
+      ZAP1_MAX_ANCHOR_AGE_HOURS: "72"
+      ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID: ${{ vars.ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v5
@@ -20,10 +21,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run anchor liveness proof
-        run: python3 scripts/check_anchor_liveness.py
-
-      - name: Validate API schemas
+      - name: Verify deployed source, anchor, and current proof
         env:
           ZAP1_ADMIN_API_KEY: ${{ secrets.ZAP1_ADMIN_API_KEY }}
-        run: python3 conformance/check_api.py
+        run: bash scripts/check_live.sh

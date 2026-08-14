@@ -44,7 +44,7 @@ fn walk_raw(leaf: &[u8; 32], proof: &[ProofStep]) -> [u8; 32] {
 }
 
 fn legacy_allowed(scheme: Option<&str>, anchor_height: Option<u64>, allow: bool) -> bool {
-    (allow || scheme == Some(LEGACY_SCHEME))
+    (scheme == Some(LEGACY_SCHEME) || (scheme.is_none() && allow))
         && anchor_height
             .map(|h| h <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT)
             .unwrap_or(false)
@@ -61,7 +61,8 @@ fn main() {
     let mut lines: Vec<String> = Vec::with_capacity(cases.len());
     for case in cases {
         let id = case["id"].as_str().expect("id");
-        let leaf = hex_to_bytes32(case["leaf_hash"].as_str().expect("leaf_hash")).expect("leaf hex");
+        let leaf =
+            hex_to_bytes32(case["leaf_hash"].as_str().expect("leaf_hash")).expect("leaf hex");
         let leaf_count = case["leaf_count"].as_u64().expect("leaf_count") as usize;
         let proof: Vec<ProofStep> = case["proof"]
             .as_array()
@@ -78,20 +79,22 @@ fn main() {
                 ProofStep { hash, position }
             })
             .collect();
-        let expected =
-            hex_to_bytes32(case["expected_root"].as_str().expect("expected_root")).expect("root hex");
+        let expected = hex_to_bytes32(case["expected_root"].as_str().expect("expected_root"))
+            .expect("root hex");
         let scheme = case["scheme"].as_str();
         let anchor_height = case["anchor_height"].as_u64();
         let allow = case["allow_historical_legacy"].as_bool().unwrap_or(false);
 
         let raw_root = walk_raw(&leaf, &proof);
         let count_bound_root = commit_root(leaf_count, &raw_root);
-        let v2_valid = verify_proof(&leaf, &proof, leaf_count, &expected);
+        let count_bound_admitted = scheme.is_none() || scheme == Some(COUNT_BOUND_SCHEME);
+        let scheme_admitted = count_bound_admitted || scheme == Some(LEGACY_SCHEME);
+        let v2_valid = count_bound_admitted && verify_proof(&leaf, &proof, leaf_count, &expected);
         let legacy_match = verify_legacy_proof(&leaf, &proof, &expected);
 
         let (valid, result_scheme): (bool, &str) = if v2_valid {
             (true, COUNT_BOUND_SCHEME)
-        } else if legacy_match && legacy_allowed(scheme, anchor_height, allow) {
+        } else if scheme_admitted && legacy_match && legacy_allowed(scheme, anchor_height, allow) {
             (true, LEGACY_SCHEME)
         } else {
             (false, "INVALID")

@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-ZAP1 Independent Verifier
+ZAP1 Merkle-Bundle Verifier
 ===================================
-Verify a Merkle inclusion proof without trusting the operator's server.
+Verify a Merkle inclusion proof against a supplied root after download.
+
+This proves bundle consistency only. It does not establish the origin or
+publication of the supplied root, decrypt a shielded memo, or prove the
+underlying event claim.
+
+When a bundle supplies only leaf.hash, its displayed event type is claimed
+server metadata. It is not authenticated unless matching typed fields are
+provided and recomputed to the same leaf hash.
 
 Usage:
   python3 verify_proof.py --leaf-hash <hex> --proof <json_file> --root <hex>
@@ -12,10 +20,10 @@ Usage:
 The proof JSON file should contain an array of steps:
   [{"hash": "aabb...", "position": "left|right"}, ...]
 
-Supports all 12 ZAP1 event types (ONCHAIN_PROTOCOL.md):
+Typed reconstruction helpers cover these event types:
   0x01 PROGRAM_ENTRY, 0x02 OWNERSHIP_ATTEST, 0x03 CONTRACT_ANCHOR,
   0x04 DEPLOYMENT, 0x05 HOSTING_PAYMENT, 0x06 SHIELD_RENEWAL,
-  0x07 TRANSFER, 0x08 EXIT, 0x09 MERKLE_ROOT,
+  0x07 TRANSFER, 0x08 EXIT,
   0x40 AGENT_REGISTER, 0x41 AGENT_POLICY, 0x42 AGENT_ACTION
 
 Hash: BLAKE2b-256, personalization "NordicShield_" (leaf),
@@ -24,6 +32,7 @@ Hash: BLAKE2b-256, personalization "NordicShield_" (leaf),
 
 import argparse
 import json
+import re
 import struct
 import sys
 
@@ -39,6 +48,81 @@ ROOT_PERSONAL = b"NordicShield_RTK"  # 16 bytes
 COUNT_BOUND_SCHEME = "ZAP1_COUNT_BOUND_V2"
 LEGACY_SCHEME = "ZAP1_LEGACY_DUPLICATE_ODD"
 LEGACY_ROOT_MAX_ANCHOR_HEIGHT = 3317133
+CURRENT_BUNDLE_VERSION = "2"
+HISTORICAL_BUNDLE_VERSION = "1.0.0"
+MAX_U64 = (1 << 64) - 1
+HEX32_RE = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def require_hex32(value, label: str) -> str:
+    if not isinstance(value, str) or HEX32_RE.fullmatch(value) is None:
+        raise ValueError(f"{label} must be exactly 32-byte lowercase hex")
+    return value
+
+
+def decode_hex32(value, label: str) -> bytes:
+    return bytes.fromhex(require_hex32(value, label))
+
+
+def require_leaf_count(value) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_U64:
+        raise ValueError("leaf_count must be an integer from 1 through 2^64-1")
+    return value
+
+
+def require_anchor_height(value, label: str = "anchor.height"):
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
+        raise ValueError(f"{label} must be a nonnegative u32 or null")
+    return value
+
+
+def validate_bundle(bundle: object) -> tuple:
+    if not isinstance(bundle, dict):
+        raise ValueError("proof bundle must be a JSON object")
+    if bundle.get("protocol") != "ZAP1":
+        raise ValueError("bundle protocol must be exactly 'ZAP1'")
+
+    version = bundle.get("version")
+    leaf = bundle.get("leaf")
+    proof = bundle.get("proof")
+    root = bundle.get("root")
+    anchor = bundle.get("anchor")
+    if not isinstance(leaf, dict) or not isinstance(root, dict) or not isinstance(anchor, dict):
+        raise ValueError("bundle leaf, root, and anchor must be objects")
+    if not isinstance(proof, list):
+        raise ValueError("bundle proof must be an array")
+
+    scheme = root.get("scheme")
+    if scheme not in (COUNT_BOUND_SCHEME, LEGACY_SCHEME):
+        raise ValueError("root.scheme is not an admitted ZAP1 Merkle scheme")
+    if version == CURRENT_BUNDLE_VERSION:
+        pass
+    elif version == HISTORICAL_BUNDLE_VERSION and scheme == LEGACY_SCHEME:
+        pass
+    else:
+        raise ValueError("bundle version and root.scheme are not an admitted pair")
+
+    leaf_hex = require_hex32(leaf.get("hash"), "leaf.hash")
+    root_hex = require_hex32(root.get("hash"), "root.hash")
+    leaf_count = require_leaf_count(root.get("leaf_count"))
+    for index, step in enumerate(proof):
+        if not isinstance(step, dict):
+            raise ValueError(f"proof[{index}] must be an object")
+        require_hex32(step.get("hash"), f"proof[{index}].hash")
+        if step.get("position") not in ("left", "right"):
+            raise ValueError(f"proof[{index}].position must be 'left' or 'right'")
+
+    txid = anchor.get("txid")
+    if txid is not None:
+        require_hex32(txid, "anchor.txid")
+    height = require_anchor_height(anchor.get("height"))
+    if scheme == LEGACY_SCHEME and (
+        height is None or height > LEGACY_ROOT_MAX_ANCHOR_HEIGHT
+    ):
+        raise ValueError("historical legacy bundle lacks an admitted anchor height")
+    return leaf_hex, proof, root_hex, leaf_count, scheme, height
 
 
 def _hash(type_byte: int, payload: bytes) -> bytes:
@@ -104,35 +188,50 @@ def hash_agent_action(agent_id: str, action_type: str, input_hash: str, output_h
 
 
 def hash_node(left: bytes, right: bytes) -> bytes:
+    if len(left) != 32 or len(right) != 32:
+        raise ValueError("Merkle node inputs must each be 32 bytes")
     return blake2b(left + right, digest_size=32, person=NODE_PERSONAL).digest()
 
 
 def commit_root(leaf_count: int, raw_root: bytes) -> bytes:
-    if leaf_count <= 0:
-        raise ValueError("leaf_count must be positive")
+    leaf_count = require_leaf_count(leaf_count)
+    if len(raw_root) != 32:
+        raise ValueError("raw Merkle root must be 32 bytes")
     return blake2b(
-        b"\x01" + int(leaf_count).to_bytes(8, "big") + raw_root,
+        b"\x01" + leaf_count.to_bytes(8, "big") + raw_root,
         digest_size=32,
         person=ROOT_PERSONAL,
     ).digest()
 
 
 def walk_proof(leaf_hash: bytes, proof: list) -> bytes:
+    if not isinstance(leaf_hash, bytes) or len(leaf_hash) != 32:
+        raise ValueError("leaf hash must be exactly 32 bytes")
+    if not isinstance(proof, list):
+        raise ValueError("proof must be an array")
     current = leaf_hash
-    for step in proof:
-        sibling = bytes.fromhex(step["hash"])
-        if step["position"] == "right":
+    for index, step in enumerate(proof):
+        if not isinstance(step, dict):
+            raise ValueError(f"proof[{index}] must be an object")
+        sibling = decode_hex32(step.get("hash"), f"proof[{index}].hash")
+        position = step.get("position")
+        if position == "right":
             current = hash_node(current, sibling)
-        else:
+        elif position == "left":
             current = hash_node(sibling, current)
+        else:
+            raise ValueError(f"proof[{index}].position must be 'left' or 'right'")
     return current
 
 
 def historical_legacy_allowed(scheme, anchor_height, allow_flag) -> bool:
+    if scheme not in (None, COUNT_BOUND_SCHEME, LEGACY_SCHEME):
+        raise ValueError("unrecognized Merkle scheme")
+    anchor_height = require_anchor_height(anchor_height, "anchor height")
     return (
-        (allow_flag or scheme == LEGACY_SCHEME)
+        (scheme == LEGACY_SCHEME or (scheme is None and allow_flag))
         and anchor_height is not None
-        and int(anchor_height) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
+        and anchor_height <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
     )
 
 
@@ -145,10 +244,15 @@ def verify_proof(
     anchor_height=None,
     allow_historical_legacy: bool = False,
 ) -> tuple:
+    if not isinstance(expected_root, bytes) or len(expected_root) != 32:
+        raise ValueError("expected root must be exactly 32 bytes")
+    leaf_count = require_leaf_count(leaf_count)
     raw_root = walk_proof(leaf_hash, proof)
     count_bound_root = commit_root(leaf_count, raw_root)
+    if scheme not in (None, COUNT_BOUND_SCHEME, LEGACY_SCHEME):
+        return False, "INVALID", count_bound_root, raw_root
 
-    if count_bound_root == expected_root:
+    if scheme in (None, COUNT_BOUND_SCHEME) and count_bound_root == expected_root:
         return True, COUNT_BOUND_SCHEME, count_bound_root, raw_root
 
     if raw_root == expected_root and historical_legacy_allowed(
@@ -164,7 +268,7 @@ def compute_leaf(args) -> tuple:
     et = (args.event_type or "").upper()
 
     if args.leaf_hash:
-        return bytes.fromhex(args.leaf_hash), "provided"
+        return decode_hex32(args.leaf_hash, "--leaf-hash"), "provided"
 
     if et == "CONTRACT_ANCHOR":
         h = hash_contract_anchor(args.serial, args.contract_sha256)
@@ -216,7 +320,7 @@ def compute_leaf(args) -> tuple:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ZAP1 Merkle Proof Verifier (all 9 event types)")
+    parser = argparse.ArgumentParser(description="ZAP1 Merkle-Bundle Verifier")
     parser.add_argument("--leaf-hash", help="Hex-encoded leaf hash (if known)")
     parser.add_argument("--event-type", help="Event type: PROGRAM_ENTRY, OWNERSHIP_ATTEST, CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT, AGENT_REGISTER, AGENT_POLICY, AGENT_ACTION")
     parser.add_argument("--wallet-hash", help="Wallet hash string")
@@ -247,53 +351,74 @@ def main():
     )
     args = parser.parse_args()
 
-    with open(args.proof) as f:
-        proof_doc = json.load(f)
+    try:
+        with open(args.proof) as f:
+            proof_doc = json.load(f)
 
-    bundle = proof_doc if isinstance(proof_doc, dict) and "proof" in proof_doc else None
-    proof = bundle["proof"] if bundle else proof_doc
-    if not isinstance(proof, list):
-        print("Error: proof file must contain a proof array or ZAP1 proof bundle")
-        sys.exit(1)
+        bundle = proof_doc if isinstance(proof_doc, dict) and "proof" in proof_doc else None
+        if bundle is not None:
+            (
+                bundle_leaf_hex,
+                proof,
+                bundle_root_hex,
+                bundle_leaf_count,
+                scheme,
+                bundle_anchor_height,
+            ) = validate_bundle(bundle)
+            bundle_leaf = bundle["leaf"]
+            if args.root is not None and require_hex32(args.root, "--root") != bundle_root_hex:
+                raise ValueError("--root does not match bundle root.hash")
+            if args.leaf_count is not None and args.leaf_count != bundle_leaf_count:
+                raise ValueError("--leaf-count does not match bundle root.leaf_count")
+            if args.anchor_height is not None and args.anchor_height != bundle_anchor_height:
+                raise ValueError("--anchor-height does not match bundle anchor.height")
+            root_hex = bundle_root_hex
+            leaf_count = bundle_leaf_count
+            anchor_height = bundle_anchor_height
+        else:
+            if not isinstance(proof_doc, list):
+                raise ValueError("proof file must contain a proof array or ZAP1 proof bundle")
+            proof = proof_doc
+            bundle_leaf = {}
+            scheme = None
+            if args.root is None:
+                raise ValueError("provide --root or a proof bundle with root.hash")
+            if args.leaf_count is None:
+                raise ValueError("provide --leaf-count or a proof bundle with root.leaf_count")
+            root_hex = require_hex32(args.root, "--root")
+            leaf_count = require_leaf_count(args.leaf_count)
+            anchor_height = require_anchor_height(args.anchor_height, "--anchor-height")
 
-    bundle_root = bundle.get("root", {}) if bundle else {}
-    bundle_anchor = bundle.get("anchor", {}) if bundle else {}
-    bundle_leaf = bundle.get("leaf", {}) if bundle else {}
+        expected_root = decode_hex32(root_hex, "expected root")
+        if bundle is not None and not any(
+            [
+                args.leaf_hash,
+                args.wallet_hash,
+                args.serial,
+                args.event_type,
+                args.contract_sha256,
+                args.facility_id,
+                args.new_wallet_hash,
+                args.agent_id,
+            ]
+        ):
+            leaf_hash = decode_hex32(bundle_leaf_hex, "bundle leaf.hash")
+            desc = f"claimed bundle type={bundle_leaf.get('event_type', 'unknown')}"
+            typed_leaf_verified = None
+        else:
+            leaf_hash, desc = compute_leaf(args)
+            typed_leaf_verified = (
+                leaf_hash.hex() == bundle_leaf_hex if bundle is not None else None
+            )
 
-    root_hex = args.root or bundle_root.get("hash")
-    if not root_hex:
-        print("Error: provide --root or a proof bundle with root.hash")
-        sys.exit(1)
-
-    leaf_count = args.leaf_count if args.leaf_count is not None else bundle_root.get("leaf_count")
-    if leaf_count is None:
-        print("Error: provide --leaf-count or a proof bundle with root.leaf_count")
-        sys.exit(1)
-
-    anchor_height = (
-        args.anchor_height
-        if args.anchor_height is not None
-        else bundle_anchor.get("height")
-    )
-    scheme = bundle_root.get("scheme")
-
-    expected_root = bytes.fromhex(root_hex)
-    if bundle_leaf.get("hash") and not any(
-        [
-            args.leaf_hash,
-            args.wallet_hash,
-            args.serial,
-            args.event_type,
-            args.contract_sha256,
-            args.facility_id,
-            args.new_wallet_hash,
-            args.agent_id,
-        ]
-    ):
-        leaf_hash = bytes.fromhex(bundle_leaf["hash"])
-        desc = f"bundle leaf event={bundle_leaf.get('event_type', 'unknown')}"
-    else:
-        leaf_hash, desc = compute_leaf(args)
+        raw_root = walk_proof(leaf_hash, proof)
+        count_bound_root = commit_root(leaf_count, raw_root)
+        legacy_allowed = historical_legacy_allowed(
+            scheme, anchor_height, args.allow_historical_legacy
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        return 1
 
     print(f"Event:                 {desc}")
     print(f"Leaf hash:             {leaf_hash.hex()}")
@@ -306,31 +431,46 @@ def main():
     print(f"Proof steps:           {len(proof)}")
     print()
 
+    if typed_leaf_verified is None:
+        print("Typed leaf:            UNVERIFIED claimed metadata; no typed witness was recomputed")
+    elif typed_leaf_verified:
+        print("Typed leaf:            MATCH; supplied fields recompute to the bundle leaf")
+    else:
+        print("Typed leaf:            MISMATCH; supplied fields do not recompute to the bundle leaf")
+        print("FAILED. Typed witness does not match the bundle leaf hash.")
+        sys.exit(1)
+
     current = leaf_hash
     for i, step in enumerate(proof):
-        sibling = bytes.fromhex(step["hash"])
+        sibling = decode_hex32(step.get("hash"), f"proof[{i}].hash")
         pos = step["position"]
         if pos == "right":
             current = hash_node(current, sibling)
-        else:
+        elif pos == "left":
             current = hash_node(sibling, current)
+        else:
+            print(f"FAILED. Invalid proof position at step {i}: {pos!r}")
+            sys.exit(1)
         print(f"  Step {i}: sibling={step['hash'][:16]}... ({pos}) -> {current.hex()[:16]}...")
 
-    count_bound_root = commit_root(int(leaf_count), current)
-    legacy_allowed = historical_legacy_allowed(
-        scheme, anchor_height, args.allow_historical_legacy
-    )
+    if current != raw_root:
+        print("FAILED. Internal proof walk mismatch.")
+        return 1
 
     print()
     print(f"Computed v2 root:      {count_bound_root.hex()}")
     print(f"Legacy raw root:       {current.hex()}")
-    if count_bound_root == expected_root:
-        print("VERIFIED. Count-bound proof is valid. Leaf is included in the published root.")
-        sys.exit(0)
+    if scheme in (None, COUNT_BOUND_SCHEME) and count_bound_root == expected_root:
+        print("MERKLE MATCH. Count-bound proof includes the supplied leaf hash under the supplied root.")
+        if typed_leaf_verified is None:
+            print("CLAIMED TYPE UNVERIFIED. Provide and recompute a typed witness to authenticate it.")
+        return 0
     if current == expected_root and legacy_allowed:
-        print("VERIFIED. Historical legacy proof is valid for the supplied pre-fix anchor height.")
+        print("MERKLE MATCH. Historical legacy proof includes the supplied leaf hash under the supplied pre-fix root.")
+        if typed_leaf_verified is None:
+            print("CLAIMED TYPE UNVERIFIED. Provide and recompute a typed witness to authenticate it.")
         print(f"WARNING: legacy roots do not bind leaf_count; accepted only through height {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}.")
-        sys.exit(0)
+        return 0
 
     if current == expected_root:
         print("FAILED. Proof resolves only to the legacy raw root.")
@@ -341,8 +481,8 @@ def main():
     else:
         print("FAILED. Computed root does not match the expected root.")
     print(f"        Expected:      {expected_root.hex()}")
-    sys.exit(1)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

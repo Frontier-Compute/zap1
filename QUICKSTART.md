@@ -5,10 +5,17 @@
 ```bash
 git clone https://github.com/Frontier-Compute/zap1.git
 cd zap1
-bash scripts/check.sh
+bash scripts/check.sh --local
 ```
 
-14 checks. Live API, crates.io, tests, proof bundles, schema validation, memo decode, all surfaces. Takes about 2 minutes with Rust installed.
+Runs deterministic repository checks, locked Rust tests, proof fixtures,
+schema validation, compatibility vectors, and cross-language corpus checks.
+Run the live gate from the exact clean deployment commit with the image ID from
+the build and deployment receipt:
+
+```bash
+ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID=sha256:... bash scripts/check.sh --live
+```
 
 ## Step by step
 
@@ -18,11 +25,11 @@ Open:
 
 `https://api.frontiercompute.cash/protocol/info`
 
-Confirms:
+Shows the API's recorded mapping:
 
 - protocol name: `ZAP1`
 - version metadata
-- event type counts: 15 defined, 15 deployed
+- event registry: 18 defined, 15 accepted by `POST /event`, 3 system-managed
 - verification SDK reference
 - FROST and ZIP status
 
@@ -51,10 +58,13 @@ Human-readable view:
 
 Confirms:
 
-- all anchored Merkle roots
-- txids
-- block heights
+- historical Merkle roots
+- recorded transaction IDs and block heights
 - leaf-count growth over time
+
+Transaction existence is independently checkable. Because shielded memo
+contents are encrypted, this surface alone does not independently prove that a
+listed transaction memo contains the listed root.
 
 ## 4. Offline proof verification
 
@@ -87,7 +97,7 @@ Confirms:
 - current proof route is exposed for that leaf
 - the fetched bundle still verifies offline after download
 
-## 6. Optional on-chain memo check
+## 6. Optional transaction-existence check
 
 With a local Zebra RPC, check the anchor transaction memo when the proof bundle
 has a txid:
@@ -96,10 +106,11 @@ has a txid:
 python3 examples/verify_onchain.py examples/proof_bundle_example.json --rpc http://127.0.0.1:8232
 ```
 
-Confirms:
+Checks:
 
 - Merkle proof resolves to the claimed root
-- anchor memo matches when the local chain reader can decrypt/extract it
+- the referenced transaction exists when the RPC can return it
+- exits incomplete because encrypted Orchard memo contents are not opened
 
 ## 7. Reference implementation
 
@@ -129,11 +140,13 @@ WASM verifier:
 
 `https://frontiercompute.io/verify.html`
 
-Confirms:
+Bounds:
 
-- standalone verifier exists outside the reference implementation
-- Rust crate and WASM path are both shipped
-- browser verification does not depend on a backend round-trip
+- the public repository and crates.io package are legacy 0.2.1 surfaces
+- the count-bound 0.3.0 Rust and WASM candidate is in this repository and is
+  not published
+- local browser verification does not need a backend after a bundle is
+  obtained, but it does not authenticate root publication
 
 ## 9. Test vectors
 
@@ -143,28 +156,35 @@ Open:
 
 Confirms:
 
-- deterministic vectors exist for all 15 deployed ZAP1 event types
+- fixed vectors exist for all 18 defined ZAP1 event types
 
 ## 10. Clone and run tests
 
 ```bash
 git clone https://github.com/Frontier-Compute/zap1.git
 cd zap1
-cargo test --release --test memo_merkle_test
+cargo test --release --locked --test memo_merkle_test
 ```
 
-## 11. Zaino gRPC validation
+For deployment, follow [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md). Build from a
+clean Git archive with `scripts/build_image.sh`, preserve its checksummed
+receipt, run `scripts/operator-setup.sh` against that receipt, and start only
+the exact image ID.
+
+## 11. Historical Zaino gRPC exercise
 
 Details:
 
 `https://github.com/Frontier-Compute/zap1/blob/main/ZAINO_VALIDATION.md`
 
-Confirms:
+Records an application-operated historical exercise:
 
-- Zaino 0.2.0 gRPC serving on the same infrastructure as the production scanner
-- GetBlock, GetBlockRange, GetTransaction, GetLatestTreeState all tested
-- Our anchor transactions are retrievable via both Zebra RPC and Zaino gRPC
-- NodeBackend trait abstracts both backends
+- Zaino 0.2.0 gRPC ran on infrastructure controlled by the application operator
+- GetBlock, GetBlockRange, GetTransaction, and GetLatestTreeState were exercised
+- the checked historical transaction set was retrieved through Zebra RPC and
+  Zaino gRPC at that cutoff
+- this is not independent validation, current service status, or proof that
+  every anchor transaction is retrievable now
 
 ## 12. Operator tooling
 
@@ -179,8 +199,9 @@ cargo run --bin zaino_adapter -- --zaino-url http://127.0.0.1:8137 --api-url htt
 Confirms:
 
 - operator status rollup works against live stack
-- event witness data recomputes to the anchored leaf hash
-- Zaino compact block path retrieves all anchor transactions
+- event witness data recomputes to the supplied leaf hash
+- Zaino adapter can be run against an operator-selected endpoint; results are
+  endpoint-specific and current retrieval is not assumed
 
 Operator runbook: `https://github.com/Frontier-Compute/zap1/blob/main/docs/OPERATOR_RUNBOOK.md`
 
@@ -203,14 +224,14 @@ Consumer contracts: `conformance/contracts/` (wallet, explorer, indexer, operato
 OpenAPI spec: `conformance/openapi.yaml`
 Reference clients: `conformance/clients/` (Python, TypeScript)
 
-## 14. ZIP draft
+## 14. Research wire-format draft
 
 PR:
 
 `https://github.com/zcash/zips/pull/1243`
 
-Confirms:
+Status:
 
-- the protocol has been pushed into the Zcash standards process
-- scope is application-layer attestation, not wallet transport
-- ZIP 302 relationship documented
+- open and draft
+- not a canonical wire format
+- byte-level and registry reconciliation remains pending

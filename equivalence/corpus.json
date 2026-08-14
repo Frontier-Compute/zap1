@@ -98,6 +98,22 @@
       "note": "wrong expected root: invalid"
     },
     {
+      "id": "neg_fake_scheme",
+      "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
+      "leaf_count": 2,
+      "proof": [
+        {
+          "hash": "de62554ad3867a59895befa7216686c923fc86245231e8fb6bd709a20e1fd133",
+          "position": "right"
+        }
+      ],
+      "expected_root": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
+      "scheme": "ZAP1_FAKE_SCHEME",
+      "anchor_height": null,
+      "allow_historical_legacy": false,
+      "note": "valid count-bound math under an unrecognized scheme: invalid"
+    },
+    {
       "id": "neg_wrong_leaf_count",
       "leaf_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
       "leaf_count": 3,

@@ -59,7 +59,7 @@
     "procedure": [
       "for each proof entry, verify the Merkle proof from leaf_hash to root",
       "use BLAKE2b-256 with NordicShield_MRK personalization for tree nodes",
-      "confirm the root matches the anchor_txid on Zcash mainnet",
+      "treat the txid and height as a transaction reference unless a separate safe opening binds the encrypted memo to the root",
       "confirm the anchor_txid is mined at anchor_height",
       "optionally use zap1_schema --emit-witness to verify preimage fields"
     ]

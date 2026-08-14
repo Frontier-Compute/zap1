@@ -1,8 +1,8 @@
 //! zap1-verify - Standalone Merkle proof verifier for the ZAP1 protocol.
 //!
-//! Standalone verification of ZAP1 on-chain attestation commitments.
-//! Implements BLAKE2b-256 leaf hashing for all 12 ZAP1 event types
-//! (core 0x01-0x09 plus agent extension 0x40-0x42) and Merkle proof
+//! Standalone verification of ZAP1 Merkle commitments.
+//! Implements BLAKE2b-256 leaf hashing for all 18 event types
+//! defined by the reference implementation and Merkle proof
 //! path walking with ZAP1 Merkle personalizations.
 //!
 //! Only dependency: `blake2b_simd`.
@@ -11,7 +11,7 @@ use blake2b_simd::Params;
 
 // Constants
 
-/// BLAKE2b-256 personalization for leaf hashing (types 0x01-0x08, 0x40-0x42).
+/// BLAKE2b-256 personalization for leaf hashing (all defined types except 0x09).
 /// 13 bytes; blake2b_simd zero-pads to 16 internally.
 pub const DEFAULT_LEAF_PERSONAL: &[u8; 13] = b"NordicShield_";
 
@@ -49,6 +49,12 @@ pub enum EventType {
     Transfer = 0x07,
     Exit = 0x08,
     MerkleRoot = 0x09,
+    StakingDeposit = 0x0A,
+    StakingWithdraw = 0x0B,
+    StakingReward = 0x0C,
+    GovernanceProposal = 0x0D,
+    GovernanceVote = 0x0E,
+    GovernanceResult = 0x0F,
     AgentRegister = 0x40,
     AgentPolicy = 0x41,
     AgentAction = 0x42,
@@ -67,6 +73,12 @@ impl EventType {
             0x07 => Some(Self::Transfer),
             0x08 => Some(Self::Exit),
             0x09 => Some(Self::MerkleRoot),
+            0x0A => Some(Self::StakingDeposit),
+            0x0B => Some(Self::StakingWithdraw),
+            0x0C => Some(Self::StakingReward),
+            0x0D => Some(Self::GovernanceProposal),
+            0x0E => Some(Self::GovernanceVote),
+            0x0F => Some(Self::GovernanceResult),
             0x40 => Some(Self::AgentRegister),
             0x41 => Some(Self::AgentPolicy),
             0x42 => Some(Self::AgentAction),
@@ -122,6 +134,42 @@ pub enum EventPayload<'a> {
     },
     /// Type 0x09: raw 32-byte Merkle root (no additional hashing).
     MerkleRoot { root_hash: [u8; 32] },
+    /// `BLAKE2b(0x0A || len(wallet) || wallet || amount_zat_be_u64 || len(validator) || validator)`
+    StakingDeposit {
+        wallet_hash: &'a [u8],
+        amount_zat: u64,
+        validator_id: &'a [u8],
+    },
+    /// `BLAKE2b(0x0B || len(wallet) || wallet || amount_zat_be_u64 || len(validator) || validator)`
+    StakingWithdraw {
+        wallet_hash: &'a [u8],
+        amount_zat: u64,
+        validator_id: &'a [u8],
+    },
+    /// `BLAKE2b(0x0C || len(wallet) || wallet || amount_zat_be_u64 || epoch_be_u32)`
+    StakingReward {
+        wallet_hash: &'a [u8],
+        amount_zat: u64,
+        epoch: u32,
+    },
+    /// `BLAKE2b(0x0D || len(wallet) || wallet || len(proposal_id) || proposal_id || len(proposal_hash) || proposal_hash)`
+    GovernanceProposal {
+        wallet_hash: &'a [u8],
+        proposal_id: &'a [u8],
+        proposal_hash: &'a [u8],
+    },
+    /// `BLAKE2b(0x0E || len(wallet) || wallet || len(proposal_id) || proposal_id || len(vote_commitment) || vote_commitment)`
+    GovernanceVote {
+        wallet_hash: &'a [u8],
+        proposal_id: &'a [u8],
+        vote_commitment: &'a [u8],
+    },
+    /// `BLAKE2b(0x0F || len(wallet) || wallet || len(proposal_id) || proposal_id || len(result_hash) || result_hash)`
+    GovernanceResult {
+        wallet_hash: &'a [u8],
+        proposal_id: &'a [u8],
+        result_hash: &'a [u8],
+    },
     /// `BLAKE2b(0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)`
     AgentRegister {
         agent_id: &'a [u8],
@@ -220,14 +268,16 @@ pub fn commit_root(leaf_count: usize, raw_root: &[u8; 32]) -> [u8; 32] {
 /// Append a 2-byte big-endian length prefix followed by the field bytes.
 #[inline]
 fn push_len_prefixed(buf: &mut Vec<u8>, field: &[u8]) {
-    buf.extend_from_slice(&(field.len() as u16).to_be_bytes());
+    let length = u16::try_from(field.len())
+        .expect("ZAP1 length-prefixed fields must not exceed 65535 bytes");
+    buf.extend_from_slice(&length.to_be_bytes());
     buf.extend_from_slice(field);
 }
 
 /// Compute the leaf hash for an ZAP1 event.
 ///
-/// Returns the 32-byte BLAKE2b-256 digest for types 0x01 - 0x08 and the
-/// agent extension types 0x40 - 0x42, or the raw root bytes for type 0x09
+/// Returns the 32-byte BLAKE2b-256 digest for all defined types except 0x09,
+/// which returns the raw root bytes
 /// (`MERKLE_ROOT`).
 pub fn compute_leaf_hash(payload: &EventPayload) -> [u8; 32] {
     compute_leaf_hash_with_personalization(payload, None)
@@ -337,6 +387,92 @@ pub fn compute_leaf_hash_with_personalization(
         }
 
         EventPayload::MerkleRoot { root_hash } => *root_hash,
+
+        EventPayload::StakingDeposit {
+            wallet_hash,
+            amount_zat,
+            validator_id,
+        } => {
+            let mut buf =
+                Vec::with_capacity(1 + 2 + wallet_hash.len() + 8 + 2 + validator_id.len());
+            buf.push(EventType::StakingDeposit as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            buf.extend_from_slice(&amount_zat.to_be_bytes());
+            push_len_prefixed(&mut buf, validator_id);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::StakingWithdraw {
+            wallet_hash,
+            amount_zat,
+            validator_id,
+        } => {
+            let mut buf =
+                Vec::with_capacity(1 + 2 + wallet_hash.len() + 8 + 2 + validator_id.len());
+            buf.push(EventType::StakingWithdraw as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            buf.extend_from_slice(&amount_zat.to_be_bytes());
+            push_len_prefixed(&mut buf, validator_id);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::StakingReward {
+            wallet_hash,
+            amount_zat,
+            epoch,
+        } => {
+            let mut buf = Vec::with_capacity(1 + 2 + wallet_hash.len() + 8 + 4);
+            buf.push(EventType::StakingReward as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            buf.extend_from_slice(&amount_zat.to_be_bytes());
+            buf.extend_from_slice(&epoch.to_be_bytes());
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::GovernanceProposal {
+            wallet_hash,
+            proposal_id,
+            proposal_hash,
+        } => {
+            let mut buf = Vec::with_capacity(
+                1 + 2 + wallet_hash.len() + 2 + proposal_id.len() + 2 + proposal_hash.len(),
+            );
+            buf.push(EventType::GovernanceProposal as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            push_len_prefixed(&mut buf, proposal_id);
+            push_len_prefixed(&mut buf, proposal_hash);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::GovernanceVote {
+            wallet_hash,
+            proposal_id,
+            vote_commitment,
+        } => {
+            let mut buf = Vec::with_capacity(
+                1 + 2 + wallet_hash.len() + 2 + proposal_id.len() + 2 + vote_commitment.len(),
+            );
+            buf.push(EventType::GovernanceVote as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            push_len_prefixed(&mut buf, proposal_id);
+            push_len_prefixed(&mut buf, vote_commitment);
+            leaf_blake2b(&buf, personalization)
+        }
+
+        EventPayload::GovernanceResult {
+            wallet_hash,
+            proposal_id,
+            result_hash,
+        } => {
+            let mut buf = Vec::with_capacity(
+                1 + 2 + wallet_hash.len() + 2 + proposal_id.len() + 2 + result_hash.len(),
+            );
+            buf.push(EventType::GovernanceResult as u8);
+            push_len_prefixed(&mut buf, wallet_hash);
+            push_len_prefixed(&mut buf, proposal_id);
+            push_len_prefixed(&mut buf, result_hash);
+            leaf_blake2b(&buf, personalization)
+        }
 
         EventPayload::AgentRegister {
             agent_id,
@@ -482,7 +618,7 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    // TEST_VECTORS.md - all 9 event types
+    // Fixed vectors published in TEST_VECTORS.md.
 
     #[test]
     fn vec_01_program_entry() {
@@ -592,6 +728,64 @@ mod tests {
         assert_eq!(hash, root);
     }
 
+    #[test]
+    fn vec_0a_through_0f() {
+        let vectors = [
+            (
+                compute_leaf_hash(&EventPayload::StakingDeposit {
+                    wallet_hash: b"crosslink_validator_001",
+                    amount_zat: 1_000_000_000,
+                    validator_id: b"validator-london-01",
+                }),
+                "94473f27ed59a1cca8353a5e26127dd61b3f23c67320c5f1c458e3dbc0d61803",
+            ),
+            (
+                compute_leaf_hash(&EventPayload::StakingWithdraw {
+                    wallet_hash: b"crosslink_validator_001",
+                    amount_zat: 500_000_000,
+                    validator_id: b"validator-london-01",
+                }),
+                "02cf2490cb4746354914af7225187aa9fab5095a1e5e7f76246c7ae8f29172c0",
+            ),
+            (
+                compute_leaf_hash(&EventPayload::StakingReward {
+                    wallet_hash: b"crosslink_validator_001",
+                    amount_zat: 312_500,
+                    epoch: 1,
+                }),
+                "22371dd6f20d531631e331dc6ff27cd633e6eee9c92b3df1418da53885aaec43",
+            ),
+            (
+                compute_leaf_hash(&EventPayload::GovernanceProposal {
+                    wallet_hash: b"dao_operator_001",
+                    proposal_id: b"proposal-001",
+                    proposal_hash: b"abcdef1234",
+                }),
+                "2106e98c28c3f8812ecdfe3a7a97c31eeb88096ae69162f57eec1d17d4c371d7",
+            ),
+            (
+                compute_leaf_hash(&EventPayload::GovernanceVote {
+                    wallet_hash: b"voter_001",
+                    proposal_id: b"proposal-001",
+                    vote_commitment: b"commitment_hash_001",
+                }),
+                "9506b5d69b9e8ee0305460440a87205ae405acab6f17dd3cbd1d45969aa2a9ef",
+            ),
+            (
+                compute_leaf_hash(&EventPayload::GovernanceResult {
+                    wallet_hash: b"dao_operator_001",
+                    proposal_id: b"proposal-001",
+                    result_hash: b"tally_hash_001",
+                }),
+                "ea0cb641d1ca12a1bf943057a77c5a5715d0bccb0d3a6862a907fc7b352191f4",
+            ),
+        ];
+
+        for (actual, expected) in vectors {
+            assert_eq!(bytes_to_hex(&actual), expected);
+        }
+    }
+
     // Agent extension types 0x40-0x42 - vectors cross-generated with verify_proof.py
 
     #[test]
@@ -665,6 +859,11 @@ mod tests {
 
     #[test]
     fn agent_types_parse_from_byte() {
+        assert_eq!(EventType::from_byte(0x0A), Some(EventType::StakingDeposit));
+        assert_eq!(
+            EventType::from_byte(0x0F),
+            Some(EventType::GovernanceResult)
+        );
         assert_eq!(EventType::from_byte(0x40), Some(EventType::AgentRegister));
         assert_eq!(EventType::from_byte(0x41), Some(EventType::AgentPolicy));
         assert_eq!(EventType::from_byte(0x42), Some(EventType::AgentAction));
@@ -906,7 +1105,12 @@ mod tests {
     fn event_type_from_byte() {
         assert_eq!(EventType::from_byte(0x01), Some(EventType::ProgramEntry));
         assert_eq!(EventType::from_byte(0x09), Some(EventType::MerkleRoot));
+        assert_eq!(EventType::from_byte(0x0A), Some(EventType::StakingDeposit));
+        assert_eq!(
+            EventType::from_byte(0x0F),
+            Some(EventType::GovernanceResult)
+        );
         assert_eq!(EventType::from_byte(0x00), None);
-        assert_eq!(EventType::from_byte(0x0a), None);
+        assert_eq!(EventType::from_byte(0x10), None);
     }
 }

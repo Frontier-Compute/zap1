@@ -1,4 +1,4 @@
-target/
+target*/
 .env
 .env.*
 !.env.example
@@ -7,3 +7,5 @@ target/
 *.db-wal
 __pycache__/
 operators/
+data/
+**/*.bak*

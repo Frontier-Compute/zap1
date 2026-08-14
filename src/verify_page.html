@@ -87,7 +87,7 @@
 <body>
   <main>
     <div class="eyebrow">ZAP1 Verify</div>
-    <h1>Ownership attestation proof</h1>
+    <h1>Attestation receipt</h1>
     <p>{VERIFY_NOTE}</p>
 
     <div class="grid">
@@ -96,16 +96,8 @@
         <div class="value">{LEAF_HASH}</div>
       </section>
       <section class="card">
-        <div class="label">Event Type</div>
+        <div class="label">Claimed Event Type</div>
         <div class="value accent">{EVENT_TYPE}</div>
-      </section>
-      <section class="card">
-        <div class="label">Wallet</div>
-        <div class="value">{WALLET_SHORT}</div>
-      </section>
-      <section class="card">
-        <div class="label">Serial</div>
-        <div class="value">{SERIAL}</div>
       </section>
       <section class="card">
         <div class="label">Merkle Root</div>
@@ -139,7 +131,7 @@
     </section>
 
     <div class="note">
-      Proposed on-chain protocol. Trust is minimized. The proof path above can be checked independently against the published root.
+      The proof path above can be recomputed for the supplied leaf hash. The public receipt withholds the typed preimage, so the claimed event type is not authenticated. This page does not authenticate root publication or prove the underlying event claim.
       <div style="margin-top:12px">
         <a class="txid-link" href="/verify/{LEAF_HASH}/proof.json" download="proof_{LEAF_HASH}.json" style="font-size:12px">Download proof bundle (JSON)</a>
         <span style="margin:0 8px;color:var(--line)">|</span>

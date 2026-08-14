@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Indexer consumer example.
 #
-# Shows how an indexer (Zaino-backed or standalone) ingests ZAP1 data.
-# Fetches events, verifies a proof via API, demonstrates the polling pattern.
+# Shows how an indexer ingests the redacted public commitment feed.
+# Fetches records and server-computed bundle checks.
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ echo "protocol: $protocol"
 stats=$(curl -sf "$API/stats")
 anchors=$(echo "$stats" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_anchors'])")
 leaves=$(echo "$stats" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_leaves'])")
-echo "anchors: $anchors | leaves: $leaves"
+echo "API-recorded transaction references: $anchors | leaves: $leaves"
 
 # 3. fetch recent events
 events=$(curl -sf "$API/events?limit=10")
@@ -28,20 +28,21 @@ count=$(echo "$events" | python3 -c "import sys,json; print(json.load(sys.stdin)
 echo "recent events: $count"
 echo
 
-# 4. verify first event
-first_hash=$(echo "$events" | python3 -c "import sys,json; print(json.load(sys.stdin)['events'][0]['leaf_hash'])")
-check=$(curl -sf "$API/verify/$first_hash/check")
-valid=$(echo "$check" | python3 -c "import sys,json; print(json.load(sys.stdin)['valid'])")
-echo "verify $first_hash: valid=$valid"
-
-# 5. decode the memo format
-first_type=$(echo "$events" | python3 -c "import sys,json; print(json.load(sys.stdin)['events'][0]['event_type'])")
-echo "event type: $first_type"
+if [ "$count" -gt 0 ]; then
+  first_hash=$(echo "$events" | python3 -c "import sys,json; print(json.load(sys.stdin)['events'][0]['leaf_hash'])")
+  check=$(curl -sf "$API/verify/$first_hash/check")
+  valid=$(echo "$check" | python3 -c "import sys,json; print(json.load(sys.stdin)['valid'])")
+  first_type=$(echo "$events" | python3 -c "import sys,json; print(json.load(sys.stdin)['events'][0]['event_type'])")
+  echo "server bundle-consistency check $first_hash: valid=$valid"
+  echo "operator-claimed event type: $first_type"
+else
+  echo "no current record available to sample"
+fi
 
 echo
 echo "indexer pattern:"
-echo "  1. poll /events?limit=N for new attestations"
-echo "  2. verify each via /verify/{hash}/check"
+echo "  1. poll /events?limit=N for new commitment records"
+echo "  2. treat /verify/{hash}/check as a server result, not independent verification"
 echo "  3. fetch proof bundles via /verify/{hash}/proof.json"
-echo "  4. store locally for query serving"
-echo "  5. optionally use memo_scan binary for Zaino-direct scanning"
+echo "  4. verify bundle consistency locally before storing"
+echo "  5. keep event labels, transaction existence, memo binding, and claim truth separate"

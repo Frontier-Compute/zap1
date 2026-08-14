@@ -16,7 +16,9 @@ Returns recent attestation events with leaf hashes, event types, and verificatio
 GET /verify/{leaf_hash}/proof.json
 ```
 
-Returns a proof bundle with Merkle path, root, and anchor data. Display the proof steps, root hash, and on-chain anchor reference.
+Returns a proof bundle with Merkle path, root, and API-recorded transaction
+data. Display the proof steps, root hash, and recorded transaction reference
+without presenting it as public encrypted-memo verification.
 
 ## Verification
 

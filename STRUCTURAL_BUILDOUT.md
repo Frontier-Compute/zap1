@@ -7,8 +7,11 @@ This repo now exposes three operator and validation tools.
 Standalone proof-bundle verifier.
 
 Use:
-- verify a ZAP1 proof bundle without the hosted verify page
-- print the anchor facts to confirm on-chain
+- recompute a ZAP1 Merkle path without the hosted verify page
+- print the supplied root and recorded transaction reference
+
+This verifies internal consistency under the supplied root. It does not prove
+the event claim, completeness, or encrypted-memo contents.
 
 Usage:
 
@@ -42,13 +45,16 @@ Decode:
 cargo run --bin zip302_tvlv -- decode <memo_hex>
 ```
 
-## 3. Anchor liveness proof
+## 3. Anchor liveness check
 
 Nightly GitHub Actions check plus local script.
 
 Use:
-- check public anchor surfaces for freshness and consistency
-- fail on drift in protocol label, anchor counts, or latest anchor facts
+- check public anchor surfaces for freshness and internal consistency
+- fail on drift in protocol label, recorded counts, or latest API fields
+
+Liveness is an operator-surface check. It is not a memo opening or an
+independent audit of the historical records.
 
 Local run:
 

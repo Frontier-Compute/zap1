@@ -1,8 +1,9 @@
 use zap1::memo::{
-    hash_contract_anchor, hash_deployment, hash_exit, hash_governance_proposal,
-    hash_governance_result, hash_governance_vote, hash_hosting_payment, hash_ownership_attest,
-    hash_program_entry, hash_shield_renewal, hash_staking_deposit, hash_staking_reward,
-    hash_staking_withdraw, hash_transfer, merkle_root_memo, MemoType, StructuredMemo,
+    hash_agent_action, hash_agent_policy, hash_agent_register, hash_contract_anchor,
+    hash_deployment, hash_exit, hash_governance_proposal, hash_governance_result,
+    hash_governance_vote, hash_hosting_payment, hash_ownership_attest, hash_program_entry,
+    hash_shield_renewal, hash_staking_deposit, hash_staking_reward, hash_staking_withdraw,
+    hash_transfer, merkle_root_memo, MemoType, StructuredMemo,
 };
 use zap1::merkle::{
     commit_root, compute_legacy_root, compute_raw_tree_root, compute_root, decode_hash,
@@ -354,25 +355,12 @@ fn mainnet_program_entry_e2e_wallet() {
 
 #[test]
 fn all_memo_type_labels_roundtrip() {
-    let types = [
-        (0x01, "PROGRAM_ENTRY"),
-        (0x02, "OWNERSHIP_ATTEST"),
-        (0x03, "CONTRACT_ANCHOR"),
-        (0x04, "DEPLOYMENT"),
-        (0x05, "HOSTING_PAYMENT"),
-        (0x06, "SHIELD_RENEWAL"),
-        (0x07, "TRANSFER"),
-        (0x08, "EXIT"),
-        (0x09, "MERKLE_ROOT"),
-        (0x0A, "STAKING_DEPOSIT"),
-        (0x0B, "STAKING_WITHDRAW"),
-        (0x0C, "STAKING_REWARD"),
-    ];
-    for (byte, label) in types {
-        let t = MemoType::from_u8(byte).unwrap();
-        assert_eq!(t.label(), label);
-        let from_label = MemoType::from_label(label).unwrap();
-        assert_eq!(from_label.as_u8(), byte);
+    assert_eq!(MemoType::ALL.len(), 18);
+    for expected in MemoType::ALL {
+        let byte = expected.as_u8();
+        let label = expected.label();
+        assert_eq!(MemoType::from_u8(byte).unwrap(), expected);
+        assert_eq!(MemoType::from_label(label).unwrap(), expected);
     }
 }
 
@@ -463,4 +451,182 @@ fn governance_result_hash_deterministic() {
     assert_eq!(a, b);
     let c = hash_governance_result("dao_op", "prop-001", "different_tally");
     assert_ne!(a, c);
+}
+
+#[test]
+fn agent_register_hash_binds_every_field() {
+    let base = hash_agent_register(
+        "agent_001",
+        "pubkey_hash_001",
+        "model_hash_001",
+        "policy_hash_001",
+    );
+    assert_eq!(
+        base,
+        hash_agent_register(
+            "agent_001",
+            "pubkey_hash_001",
+            "model_hash_001",
+            "policy_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_register(
+            "agent_002",
+            "pubkey_hash_001",
+            "model_hash_001",
+            "policy_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_register(
+            "agent_001",
+            "pubkey_hash_002",
+            "model_hash_001",
+            "policy_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_register(
+            "agent_001",
+            "pubkey_hash_001",
+            "model_hash_002",
+            "policy_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_register(
+            "agent_001",
+            "pubkey_hash_001",
+            "model_hash_001",
+            "policy_hash_002",
+        )
+    );
+}
+
+#[test]
+fn agent_policy_hash_binds_every_field() {
+    let base = hash_agent_policy("agent_001", 7, "rules_hash_001");
+    assert_eq!(base, hash_agent_policy("agent_001", 7, "rules_hash_001"));
+    assert_ne!(base, hash_agent_policy("agent_002", 7, "rules_hash_001"));
+    assert_ne!(base, hash_agent_policy("agent_001", 8, "rules_hash_001"));
+    assert_ne!(base, hash_agent_policy("agent_001", 7, "rules_hash_002"));
+}
+
+#[test]
+fn agent_action_hash_binds_every_field() {
+    let base = hash_agent_action(
+        "agent_001",
+        "tool_call",
+        "input_hash_001",
+        "output_hash_001",
+    );
+    assert_eq!(
+        base,
+        hash_agent_action(
+            "agent_001",
+            "tool_call",
+            "input_hash_001",
+            "output_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_action(
+            "agent_002",
+            "tool_call",
+            "input_hash_001",
+            "output_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_action("agent_001", "transfer", "input_hash_001", "output_hash_001",)
+    );
+    assert_ne!(
+        base,
+        hash_agent_action(
+            "agent_001",
+            "tool_call",
+            "input_hash_002",
+            "output_hash_001",
+        )
+    );
+    assert_ne!(
+        base,
+        hash_agent_action(
+            "agent_001",
+            "tool_call",
+            "input_hash_001",
+            "output_hash_002",
+        )
+    );
+}
+
+#[test]
+fn extended_registry_vectors_match_independent_values() {
+    let vectors = [
+        (
+            hash_staking_deposit(
+                "crosslink_validator_001",
+                1_000_000_000,
+                "validator-london-01",
+            ),
+            "94473f27ed59a1cca8353a5e26127dd61b3f23c67320c5f1c458e3dbc0d61803",
+        ),
+        (
+            hash_staking_withdraw(
+                "crosslink_validator_001",
+                500_000_000,
+                "validator-london-01",
+            ),
+            "02cf2490cb4746354914af7225187aa9fab5095a1e5e7f76246c7ae8f29172c0",
+        ),
+        (
+            hash_staking_reward("crosslink_validator_001", 312_500, 1),
+            "22371dd6f20d531631e331dc6ff27cd633e6eee9c92b3df1418da53885aaec43",
+        ),
+        (
+            hash_governance_proposal("dao_operator_001", "proposal-001", "abcdef1234"),
+            "2106e98c28c3f8812ecdfe3a7a97c31eeb88096ae69162f57eec1d17d4c371d7",
+        ),
+        (
+            hash_governance_vote("voter_001", "proposal-001", "commitment_hash_001"),
+            "9506b5d69b9e8ee0305460440a87205ae405acab6f17dd3cbd1d45969aa2a9ef",
+        ),
+        (
+            hash_governance_result("dao_operator_001", "proposal-001", "tally_hash_001"),
+            "ea0cb641d1ca12a1bf943057a77c5a5715d0bccb0d3a6862a907fc7b352191f4",
+        ),
+        (
+            hash_agent_register(
+                "agent_001",
+                "pubkey_hash_001",
+                "model_hash_001",
+                "policy_hash_001",
+            ),
+            "e3042e9891a9eb88fd4e8053189abe27707803bf81ae6caea4508c3d4bd7ebda",
+        ),
+        (
+            hash_agent_policy("agent_001", 7, "rules_hash_001"),
+            "93686221f113a403eeeab7b15d7c5845fe9a9abb16d3ad0931d155c23b53a75a",
+        ),
+        (
+            hash_agent_action(
+                "agent_001",
+                "tool_call",
+                "input_hash_001",
+                "output_hash_001",
+            ),
+            "d68620ccc6de6957ab6b01fe8830ac64e2e2c455b80ce4506ef41078bcbb76f6",
+        ),
+    ];
+
+    for (actual, expected_hex) in vectors {
+        assert_eq!(hex::encode(actual), expected_hex);
+    }
 }

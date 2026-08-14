@@ -28,6 +28,29 @@ pub enum MemoType {
 }
 
 impl MemoType {
+    /// Canonical event-type registry. Public metadata and statistics must
+    /// derive their known type list from this array.
+    pub const ALL: [Self; 18] = [
+        Self::ProgramEntry,
+        Self::OwnershipAttest,
+        Self::ContractAnchor,
+        Self::Deployment,
+        Self::HostingPayment,
+        Self::ShieldRenewal,
+        Self::Transfer,
+        Self::Exit,
+        Self::MerkleRoot,
+        Self::StakingDeposit,
+        Self::StakingWithdraw,
+        Self::StakingReward,
+        Self::GovernanceProposal,
+        Self::GovernanceVote,
+        Self::GovernanceResult,
+        Self::AgentRegister,
+        Self::AgentPolicy,
+        Self::AgentAction,
+    ];
+
     pub fn as_u8(self) -> u8 {
         self as u8
     }
@@ -152,11 +175,17 @@ pub fn hash_program_entry(wallet_hash: &str) -> [u8; 32] {
     hash_payload(MemoType::ProgramEntry, wallet_hash.as_bytes())
 }
 
+fn length_prefix(field: &str) -> [u8; 2] {
+    u16::try_from(field.len())
+        .expect("ZAP1 length-prefixed fields must not exceed 65535 UTF-8 bytes")
+        .to_be_bytes()
+}
+
 pub fn hash_ownership_attest(wallet_hash: &str, serial_number: &str) -> [u8; 32] {
     let mut payload = Vec::with_capacity(wallet_hash.len() + serial_number.len() + 4);
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
     hash_payload(MemoType::OwnershipAttest, &payload)
 }
@@ -165,9 +194,9 @@ pub fn hash_ownership_attest(wallet_hash: &str, serial_number: &str) -> [u8; 32]
 /// Per ONCHAIN_PROTOCOL.md Section 3
 pub fn hash_contract_anchor(serial_number: &str, contract_sha256: &str) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
-    payload.extend_from_slice(&(contract_sha256.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(contract_sha256));
     payload.extend_from_slice(contract_sha256.as_bytes());
     hash_payload(MemoType::ContractAnchor, &payload)
 }
@@ -176,9 +205,9 @@ pub fn hash_contract_anchor(serial_number: &str, contract_sha256: &str) -> [u8; 
 /// Per ONCHAIN_PROTOCOL.md Section 3
 pub fn hash_deployment(serial_number: &str, facility_id: &str, timestamp: u64) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
-    payload.extend_from_slice(&(facility_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(facility_id));
     payload.extend_from_slice(facility_id.as_bytes());
     payload.extend_from_slice(&timestamp.to_be_bytes());
     hash_payload(MemoType::Deployment, &payload)
@@ -188,7 +217,7 @@ pub fn hash_deployment(serial_number: &str, facility_id: &str, timestamp: u64) -
 /// Per ONCHAIN_PROTOCOL.md Section 3
 pub fn hash_hosting_payment(serial_number: &str, month: u32, year: u32) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
     payload.extend_from_slice(&month.to_be_bytes());
     payload.extend_from_slice(&year.to_be_bytes());
@@ -199,7 +228,7 @@ pub fn hash_hosting_payment(serial_number: &str, month: u32, year: u32) -> [u8; 
 /// Per ONCHAIN_PROTOCOL.md Section 3
 pub fn hash_shield_renewal(wallet_hash: &str, year: u32) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
     payload.extend_from_slice(&year.to_be_bytes());
     hash_payload(MemoType::ShieldRenewal, &payload)
@@ -213,11 +242,11 @@ pub fn hash_transfer(
     serial_number: &str,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(old_wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(old_wallet_hash));
     payload.extend_from_slice(old_wallet_hash.as_bytes());
-    payload.extend_from_slice(&(new_wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(new_wallet_hash));
     payload.extend_from_slice(new_wallet_hash.as_bytes());
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
     hash_payload(MemoType::Transfer, &payload)
 }
@@ -226,9 +255,9 @@ pub fn hash_transfer(
 /// Per ONCHAIN_PROTOCOL.md Section 3
 pub fn hash_exit(wallet_hash: &str, serial_number: &str, timestamp: u64) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
-    payload.extend_from_slice(&(serial_number.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(serial_number));
     payload.extend_from_slice(serial_number.as_bytes());
     payload.extend_from_slice(&timestamp.to_be_bytes());
     hash_payload(MemoType::Exit, &payload)
@@ -236,27 +265,27 @@ pub fn hash_exit(wallet_hash: &str, serial_number: &str, timestamp: u64) -> [u8;
 
 pub fn hash_staking_deposit(wallet_hash: &str, amount_zat: u64, validator_id: &str) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
     payload.extend_from_slice(&amount_zat.to_be_bytes());
-    payload.extend_from_slice(&(validator_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(validator_id));
     payload.extend_from_slice(validator_id.as_bytes());
     hash_payload(MemoType::StakingDeposit, &payload)
 }
 
 pub fn hash_staking_withdraw(wallet_hash: &str, amount_zat: u64, validator_id: &str) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
     payload.extend_from_slice(&amount_zat.to_be_bytes());
-    payload.extend_from_slice(&(validator_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(validator_id));
     payload.extend_from_slice(validator_id.as_bytes());
     hash_payload(MemoType::StakingWithdraw, &payload)
 }
 
 pub fn hash_staking_reward(wallet_hash: &str, amount_zat: u64, epoch: u32) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
     payload.extend_from_slice(&amount_zat.to_be_bytes());
     payload.extend_from_slice(&epoch.to_be_bytes());
@@ -269,11 +298,11 @@ pub fn hash_governance_proposal(
     proposal_hash: &str,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
-    payload.extend_from_slice(&(proposal_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(proposal_id));
     payload.extend_from_slice(proposal_id.as_bytes());
-    payload.extend_from_slice(&(proposal_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(proposal_hash));
     payload.extend_from_slice(proposal_hash.as_bytes());
     hash_payload(MemoType::GovernanceProposal, &payload)
 }
@@ -284,22 +313,22 @@ pub fn hash_governance_vote(
     vote_commitment: &str,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
-    payload.extend_from_slice(&(proposal_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(proposal_id));
     payload.extend_from_slice(proposal_id.as_bytes());
-    payload.extend_from_slice(&(vote_commitment.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(vote_commitment));
     payload.extend_from_slice(vote_commitment.as_bytes());
     hash_payload(MemoType::GovernanceVote, &payload)
 }
 
 pub fn hash_governance_result(wallet_hash: &str, proposal_id: &str, result_hash: &str) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(wallet_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(wallet_hash));
     payload.extend_from_slice(wallet_hash.as_bytes());
-    payload.extend_from_slice(&(proposal_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(proposal_id));
     payload.extend_from_slice(proposal_id.as_bytes());
-    payload.extend_from_slice(&(result_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(result_hash));
     payload.extend_from_slice(result_hash.as_bytes());
     hash_payload(MemoType::GovernanceResult, &payload)
 }
@@ -311,23 +340,23 @@ pub fn hash_agent_register(
     policy_hash: &str,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(agent_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(agent_id));
     payload.extend_from_slice(agent_id.as_bytes());
-    payload.extend_from_slice(&(pubkey_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(pubkey_hash));
     payload.extend_from_slice(pubkey_hash.as_bytes());
-    payload.extend_from_slice(&(model_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(model_hash));
     payload.extend_from_slice(model_hash.as_bytes());
-    payload.extend_from_slice(&(policy_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(policy_hash));
     payload.extend_from_slice(policy_hash.as_bytes());
     hash_payload(MemoType::AgentRegister, &payload)
 }
 
 pub fn hash_agent_policy(agent_id: &str, policy_version: u32, rules_hash: &str) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(agent_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(agent_id));
     payload.extend_from_slice(agent_id.as_bytes());
     payload.extend_from_slice(&policy_version.to_be_bytes());
-    payload.extend_from_slice(&(rules_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(rules_hash));
     payload.extend_from_slice(rules_hash.as_bytes());
     hash_payload(MemoType::AgentPolicy, &payload)
 }
@@ -339,13 +368,13 @@ pub fn hash_agent_action(
     output_hash: &str,
 ) -> [u8; 32] {
     let mut payload = Vec::new();
-    payload.extend_from_slice(&(agent_id.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(agent_id));
     payload.extend_from_slice(agent_id.as_bytes());
-    payload.extend_from_slice(&(action_type.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(action_type));
     payload.extend_from_slice(action_type.as_bytes());
-    payload.extend_from_slice(&(input_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(input_hash));
     payload.extend_from_slice(input_hash.as_bytes());
-    payload.extend_from_slice(&(output_hash.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&length_prefix(output_hash));
     payload.extend_from_slice(output_hash.as_bytes());
     hash_payload(MemoType::AgentAction, &payload)
 }
@@ -354,6 +383,18 @@ pub fn merkle_root_memo(root_hash: &[u8; 32]) -> StructuredMemo {
     StructuredMemo {
         memo_type: MemoType::MerkleRoot,
         payload: *root_hash,
+    }
+}
+
+#[cfg(test)]
+mod length_safety_tests {
+    use super::hash_contract_anchor;
+
+    #[test]
+    #[should_panic(expected = "must not exceed 65535")]
+    fn direct_hash_api_never_truncates_oversized_length_prefixes() {
+        let oversized = "x".repeat(65_536);
+        let _ = hash_contract_anchor(&oversized, &"a".repeat(64));
     }
 }
 

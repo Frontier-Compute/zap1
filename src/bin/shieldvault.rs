@@ -1,4 +1,8 @@
-//! ShieldVault FROST CLI -- threshold signing for Zcash shielded transactions.
+//! ShieldVault experimental co-located FROST compatibility CLI.
+//!
+//! `sign` loads two long-term shares into one process. It is not an
+//! independent threshold-custody system and must not be used for production
+//! wallet custody.
 //!
 //! Commands:
 //!   keygen   -- Generate a FROST 2-of-3 key package (dealer mode)
@@ -9,12 +13,14 @@
 use std::path::Path;
 use std::process;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 fn usage() {
-    eprintln!("ShieldVault FROST CLI -- threshold signing for Zcash shielded transactions");
+    eprintln!("ShieldVault experimental co-located FROST compatibility CLI");
+    eprintln!("Not for production custody: sign loads both long-term shares locally.");
     eprintln!();
     eprintln!("Usage: shieldvault <command> [args...]");
+    eprintln!("Set EXPERIMENTAL_COLOCATED_FROST_ENABLED=true only for an authorized test.");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  keygen               Generate a FROST 2-of-3 key set (dealer mode)");
@@ -47,7 +53,10 @@ fn run() -> Result<()> {
     }
 
     match args[1].as_str() {
-        "keygen" => cmd_keygen(),
+        "keygen" => {
+            experimental_colocated_frost_opt_in()?;
+            cmd_keygen()
+        }
         "sign" => {
             if args.len() < 5 {
                 eprintln!("Usage: shieldvault sign <share2.json> <share3.json> <msg_hex>");
@@ -81,6 +90,39 @@ fn run() -> Result<()> {
             process::exit(1);
         }
     }
+}
+
+fn experimental_colocated_frost_opt_in() -> Result<bool> {
+    match std::env::var("EXPERIMENTAL_COLOCATED_FROST_ENABLED") {
+        Ok(value) if value == "true" => Ok(true),
+        Ok(_) => anyhow::bail!(
+            "EXPERIMENTAL_COLOCATED_FROST_ENABLED must be exactly true for this non-production command"
+        ),
+        Err(std::env::VarError::NotPresent) => anyhow::bail!(
+            "explicit EXPERIMENTAL_COLOCATED_FROST_ENABLED=true opt-in is required for this non-production command"
+        ),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn write_new_share_file(path: &Path, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("refusing to overwrite FROST share file {}", path.display()))?;
+    file.write_all(data)
+        .with_context(|| format!("writing FROST share file {}", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("syncing FROST share file {}", path.display()))
 }
 
 /// Generate a 2-of-3 FROST key set using the trusted dealer protocol.
@@ -136,15 +178,52 @@ fn cmd_keygen() -> Result<()> {
         });
 
         let filename = format!("frost_share_{}.json", i);
-        std::fs::write(&filename, serde_json::to_string_pretty(&json)?)?;
-        println!("Wrote {}", filename);
+        let share_json = serde_json::to_vec_pretty(&json)?;
+        write_new_share_file(Path::new(&filename), &share_json)?;
+        println!("Wrote {} without replacing any existing file", filename);
     }
 
     println!();
-    println!("Distribute shares to participants. Keep share files secure.");
+    println!("Store each share in a separate custody domain. Keep share files secure.");
     println!("Any 2 of 3 shares can produce a valid signature.");
+    println!("The local sign command is a compatibility experiment, not distributed custody.");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_new_share_file;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir(PathBuf);
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn share_writer_refuses_to_overwrite_existing_material() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let dir = TempDir(std::env::temp_dir().join(format!(
+            "zap1-shieldvault-test-{}-{nonce}",
+            std::process::id()
+        )));
+        std::fs::create_dir(&dir.0).unwrap();
+        let path = dir.0.join("frost_share_1.json");
+
+        write_new_share_file(&path, b"first").unwrap();
+        let error = write_new_share_file(&path, b"replacement").unwrap_err();
+
+        assert!(error.to_string().contains("refusing to overwrite"));
+        assert_eq!(std::fs::read(path).unwrap(), b"first");
+    }
 }
 
 /// Sign a hex-encoded message using two FROST share files.
@@ -152,7 +231,11 @@ fn cmd_sign(share2_path: &str, share3_path: &str, msg_hex: &str) -> Result<()> {
     use zap1::frost_signer::FrostSigner;
 
     let msg = hex::decode(msg_hex).map_err(|e| anyhow::anyhow!("bad msg hex: {}", e))?;
-    let signer = FrostSigner::from_files(Path::new(share2_path), Path::new(share3_path))?;
+    let signer = FrostSigner::from_files(
+        Path::new(share2_path),
+        Path::new(share3_path),
+        experimental_colocated_frost_opt_in()?,
+    )?;
 
     let sig = signer.sign_raw(&msg)?;
     let sig_bytes: [u8; 64] = sig.into();
@@ -173,7 +256,11 @@ fn cmd_verify(share2_path: &str, share3_path: &str, msg_hex: &str, sig_hex: &str
         .map_err(|_| anyhow::anyhow!("signature must be 64 bytes"))?;
     let sig = reddsa::Signature::from(sig_bytes);
 
-    let signer = FrostSigner::from_files(Path::new(share2_path), Path::new(share3_path))?;
+    let signer = FrostSigner::from_files(
+        Path::new(share2_path),
+        Path::new(share3_path),
+        experimental_colocated_frost_opt_in()?,
+    )?;
     signer.verify(&msg, &sig)?;
 
     println!("OK -- signature valid");
@@ -187,7 +274,11 @@ fn cmd_info(share2_path: &str, share3_path: &str) -> Result<()> {
     use reddsa::frost::redpallas::PallasBlake2b512;
     use zap1::frost_signer::FrostSigner;
 
-    let signer = FrostSigner::from_files(Path::new(share2_path), Path::new(share3_path))?;
+    let signer = FrostSigner::from_files(
+        Path::new(share2_path),
+        Path::new(share3_path),
+        experimental_colocated_frost_opt_in()?,
+    )?;
 
     let gvk_bytes: [u8; 32] = <<PallasBlake2b512 as Ciphersuite>::Group as Group>::serialize(
         &signer.group_verifying_key().to_element(),

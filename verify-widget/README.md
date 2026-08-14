@@ -1,35 +1,48 @@
 # verify-widget
 
-Zero-trust in-browser Merkle proof verifier for the ZAP1 attestation protocol on Zcash.
+Client-side Merkle-bundle consistency checker for ZAP1.
 
-All verification runs client-side. No server involved. BLAKE2b-256 with ZAP1 personalizations, Merkle path walking, and root comparison - entirely in the browser.
+After a bundle is obtained, BLAKE2b-256 hashing, Merkle path walking, and
+comparison with the supplied root run in the browser. This does not authenticate
+the root's publication or prove the underlying event claim.
 
 ## Files
 
 | File | Description |
 |------|-------------|
 | `blake2b.js` | Pure JS BLAKE2b-256 with personalization support (RFC 7693). ES module, zero dependencies. |
-| `ProofVerifier.jsx` | React component for zero-trust proof verification. Fetches proof bundle, recomputes leaf hash, walks Merkle path, compares root. |
+| `ProofVerifier.jsx` | React component that fetches from its explicit `apiBase`, binds the response to the requested leaf hash, validates the bundle, walks the Merkle path, and compares the supplied root. |
 | `verify-standalone.html` | Single HTML file verifier. No build step, no dependencies. BLAKE2b self-test on load. |
 
 ## Usage
 
 ### Standalone (no build step)
 
-Serve or open `verify-standalone.html` directly. Enter a leaf hash, click Verify. The page fetches the proof bundle from the API, recomputes every hash locally, and shows VERIFIED or FAILED.
+Serve or open `verify-standalone.html` directly. Enter a leaf hash, then click
+Verify. The page fetches from the canonical API named on the page, requires the
+returned leaf to match the request, walks the path locally, and shows MATCH or
+MISMATCH against the supplied root. It recomputes a typed leaf only if the
+required preimages are separately supplied.
 
 ### React component
 
+This widget is repository-local. No `@frontier-compute/verify-widget` npm
+package is published.
+
 ```jsx
-import { ProofVerifier } from '@frontier-compute/verify-widget/verifier';
+import ProofVerifier from './verify-widget/ProofVerifier.jsx';
 
 <ProofVerifier apiBase="https://api.frontiercompute.cash" />
 ```
 
+`apiBase` defaults to the canonical endpoint above. Set it explicitly for a
+self-hosted service. The component rejects non-HTTP(S) bases and never sends a
+request until the leaf hash and endpoint pass local validation.
+
 ### BLAKE2b library
 
 ```js
-import { blake2b256, hexToBytes, bytesToHex, computeLeafHash, nodeHash, walkProof } from '@frontier-compute/verify-widget';
+import { blake2b256, hexToBytes, bytesToHex, computeLeafHash, nodeHash, walkProof } from './verify-widget/blake2b.js';
 
 // Compute a PROGRAM_ENTRY leaf hash
 const leaf = computeLeafHash('PROGRAM_ENTRY', 'your_wallet_hash');
@@ -47,10 +60,13 @@ console.log(bytesToHex(leaf));
 
 | Type | Leaf construction |
 |------|-------------------|
-| `PROGRAM_ENTRY` (0x01) | `BLAKE2b(0x01 \|\| wallet_hash_utf8)` |
-| `OWNERSHIP_ATTEST` (0x02) | `BLAKE2b(0x02 \|\| len_be16(wallet) \|\| wallet \|\| len_be16(serial) \|\| serial)` |
+| `PROGRAM_ENTRY` (0x01) | Reconstructed only when the caller separately supplies the subject preimage. |
+| `OWNERSHIP_ATTEST` (0x02) | Reconstructed only when the caller separately supplies both subject and serial preimages. |
 
-Additional event types (0x03 - 0x08) are verified by Merkle path walk against the declared leaf hash.
+For every type, the widget can walk the supplied path from the declared leaf
+hash to the supplied root. That check does not reconstruct event fields,
+authenticate the root, or prove the claim. Public proof bundles withhold stored
+wallet and serial preimages.
 
 ## Test Vector
 
@@ -59,7 +75,8 @@ Input: PROGRAM_ENTRY, wallet_hash = "e2e_wallet_20260327"
 Leaf:  075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b
 ```
 
-Verified against Python `hashlib.blake2b` and the live API at `api.frontiercompute.cash`.
+Compared against the repository fixture and Python `hashlib.blake2b`. This is
+not a live deployment receipt.
 
 ## API
 
@@ -70,6 +87,17 @@ GET /verify/{leaf_hash}/proof.json
 ```
 
 Response includes `leaf`, `proof` (sibling array), `root`, `anchor` (txid + block height).
+
+## Tests
+
+```bash
+node verify-widget/verifier.test.mjs
+```
+
+The zero-network regression suite checks requested-hash binding, exact
+protocol and scheme labels, strict 32-byte lowercase hashes, strict proof
+positions, the historical legacy cutoff, standalone parity, and self-hosted
+endpoint selection.
 
 ## Protocol
 

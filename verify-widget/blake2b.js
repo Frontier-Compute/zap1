@@ -120,11 +120,25 @@ export function blake2b256(input, personalization) {
 // Hex utilities
 
 export function hexToBytes(hex) {
+  if (typeof hex !== "string" || hex.length % 2 !== 0 || !/^[0-9a-f]*$/.test(hex)) {
+    throw new Error("hex must contain an even number of lowercase hexadecimal characters");
+  }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {
     out[i] = parseInt(hex.substr(i * 2, 2), 16);
   }
   return out;
+}
+
+export function assertHashHex(value, label = "hash") {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${label} must be exactly 64 lowercase hexadecimal characters`);
+  }
+  return value;
+}
+
+function hashToBytes(value, label) {
+  return hexToBytes(assertHashHex(value, label));
 }
 
 export function bytesToHex(bytes) {
@@ -159,6 +173,9 @@ const ENCODER = new TextEncoder();
 export const COUNT_BOUND_SCHEME = "ZAP1_COUNT_BOUND_V2";
 export const LEGACY_SCHEME = "ZAP1_LEGACY_DUPLICATE_ODD";
 export const LEGACY_ROOT_MAX_ANCHOR_HEIGHT = 3317133;
+export const PROOF_BUNDLE_PROTOCOL = "ZAP1";
+export const PROOF_BUNDLE_VERSION = "2";
+export const DEFAULT_API_BASE = "https://api.frontiercompute.cash";
 
 // Event-type prefix bytes (known types)
 const EVENT_PREFIX = {
@@ -204,6 +221,10 @@ export function computeLeafHash(eventType, walletHash, serialNumber) {
  * Hash two 32-byte children into a Merkle node.
  */
 export function nodeHash(left, right) {
+  if (!(left instanceof Uint8Array) || left.length !== 32 ||
+      !(right instanceof Uint8Array) || right.length !== 32) {
+    throw new Error("Merkle children must each be exactly 32 bytes");
+  }
   const input = new Uint8Array(64);
   input.set(left, 0);
   input.set(right, 32);
@@ -212,7 +233,12 @@ export function nodeHash(left, right) {
 
 export function commitRoot(leafCount, rawRoot) {
   const count = BigInt(leafCount);
-  if (count <= 0n) throw new Error("leaf_count must be positive");
+  if (count <= 0n || count > 0xffffffffffffffffn) {
+    throw new Error("leaf_count must be an unsigned 64-bit positive integer");
+  }
+  if (!(rawRoot instanceof Uint8Array) || rawRoot.length !== 32) {
+    throw new Error("raw root must be exactly 32 bytes");
+  }
   const input = new Uint8Array(41);
   input[0] = 1;
   let tmp = count;
@@ -232,16 +258,24 @@ export function commitRoot(leafCount, rawRoot) {
  * @returns {{ computedRoot: string, legacyRoot: string, rootScheme: string, steps: Array<{left: string, right: string, result: string}> }}
  */
 export function walkProof(leafHashHex, proof, leafCount) {
-  let current = hexToBytes(leafHashHex);
+  let current = hashToBytes(leafHashHex, "leaf.hash");
   const steps = [];
 
-  for (const step of proof) {
-    const sibling = hexToBytes(step.hash);
+  if (!Array.isArray(proof)) throw new Error("proof must be an array");
+
+  for (let index = 0; index < proof.length; index++) {
+    const step = proof[index];
+    if (!step || typeof step !== "object" || Array.isArray(step)) {
+      throw new Error(`proof[${index}] must be an object`);
+    }
+    const sibling = hashToBytes(step.hash, `proof[${index}].hash`);
     let left, right;
     if (step.position === "right") {
       left = current; right = sibling;
-    } else {
+    } else if (step.position === "left") {
       left = sibling; right = current;
+    } else {
+      throw new Error(`proof[${index}].position must be exactly left or right`);
     }
     current = nodeHash(left, right);
     steps.push({
@@ -261,6 +295,10 @@ export function walkProof(leafHashHex, proof, leafCount) {
     };
   }
 
+  if (!Number.isSafeInteger(leafCount) || leafCount <= 0) {
+    throw new Error("root.leaf_count must be a positive safe integer");
+  }
+
   return {
     computedRoot: bytesToHex(commitRoot(leafCount, current)),
     legacyRoot,
@@ -274,8 +312,126 @@ export function isHistoricalLegacyBundle(bundle) {
   const height = bundle?.anchor?.height;
   return (
     scheme === LEGACY_SCHEME &&
-    height !== undefined &&
-    height !== null &&
-    Number(height) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
+    Number.isSafeInteger(height) &&
+    height >= 0 &&
+    height <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
   );
+}
+
+function validateAnchor(anchor) {
+  if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
+    throw new Error("anchor must be an object");
+  }
+  if (anchor.txid !== null) assertHashHex(anchor.txid, "anchor.txid");
+  if (anchor.height !== null &&
+      (!Number.isSafeInteger(anchor.height) || anchor.height < 0)) {
+    throw new Error("anchor.height must be null or a nonnegative safe integer");
+  }
+}
+
+export function verifyProofBundle(bundle, requestedHash) {
+  assertHashHex(requestedHash, "requested leaf hash");
+  if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)) {
+    throw new Error("proof bundle must be an object");
+  }
+  if (bundle.protocol !== PROOF_BUNDLE_PROTOCOL) {
+    throw new Error(`protocol must be exactly ${PROOF_BUNDLE_PROTOCOL}`);
+  }
+  if (bundle.version !== PROOF_BUNDLE_VERSION) {
+    throw new Error(`proof bundle version must be exactly ${PROOF_BUNDLE_VERSION}`);
+  }
+  if (!bundle.leaf || typeof bundle.leaf !== "object" || Array.isArray(bundle.leaf)) {
+    throw new Error("leaf must be an object");
+  }
+  assertHashHex(bundle.leaf.hash, "leaf.hash");
+  if (bundle.leaf.hash !== requestedHash) {
+    throw new Error("returned leaf hash does not match the requested leaf hash");
+  }
+  if (!bundle.root || typeof bundle.root !== "object" || Array.isArray(bundle.root)) {
+    throw new Error("root must be an object");
+  }
+  assertHashHex(bundle.root.hash, "root.hash");
+  if (!Number.isSafeInteger(bundle.root.leaf_count) || bundle.root.leaf_count <= 0) {
+    throw new Error("root.leaf_count must be a positive safe integer");
+  }
+  if (bundle.root.scheme !== COUNT_BOUND_SCHEME && bundle.root.scheme !== LEGACY_SCHEME) {
+    throw new Error("root.scheme is not a supported exact ZAP1 scheme");
+  }
+  validateAnchor(bundle.anchor);
+
+  let leafRecomputed = false;
+  let leafMatch = null;
+  let recomputedHash = null;
+  if (typeof bundle.leaf.wallet_hash === "string") {
+    const computed = computeLeafHash(
+      bundle.leaf.event_type,
+      bundle.leaf.wallet_hash,
+      bundle.leaf.serial_number
+    );
+    if (computed) {
+      recomputedHash = bytesToHex(computed);
+      leafMatch = recomputedHash === bundle.leaf.hash;
+      leafRecomputed = true;
+    }
+  }
+
+  const { computedRoot, legacyRoot, steps } = walkProof(
+    bundle.leaf.hash,
+    bundle.proof,
+    bundle.root.leaf_count
+  );
+  const rootMatchV2 = computedRoot === bundle.root.hash;
+  const rootMatchLegacy = legacyRoot === bundle.root.hash;
+  const legacyAllowed = rootMatchLegacy && isHistoricalLegacyBundle(bundle);
+  const rootMatch = bundle.root.scheme === COUNT_BOUND_SCHEME
+    ? rootMatchV2
+    : legacyAllowed;
+
+  return {
+    requestMatch: true,
+    leafMatch,
+    rootMatch,
+    rootScheme: bundle.root.scheme,
+    rootMatchV2,
+    rootMatchLegacy,
+    legacyAllowed,
+    computedRoot,
+    legacyRoot,
+    steps,
+    leafRecomputed,
+    recomputedHash,
+  };
+}
+
+export function proofBundleUrl(apiBase, requestedHash) {
+  assertHashHex(requestedHash, "requested leaf hash");
+  if (typeof apiBase !== "string" || !apiBase.trim()) {
+    throw new Error("apiBase must be an explicit HTTP(S) origin or base path");
+  }
+  let base;
+  try {
+    base = new URL(apiBase);
+  } catch {
+    throw new Error("apiBase must be a valid absolute URL");
+  }
+  if (base.protocol !== "https:" && base.protocol !== "http:") {
+    throw new Error("apiBase must use HTTP or HTTPS");
+  }
+  if (base.username || base.password || base.search || base.hash) {
+    throw new Error("apiBase must not contain credentials, a query, or a fragment");
+  }
+  const normalizedPath = base.pathname.replace(/\/+$/, "");
+  base.pathname = `${normalizedPath}/verify/${requestedHash}/proof.json`;
+  return base.toString();
+}
+
+export function fetchProofBundle(
+  apiBase,
+  requestedHash,
+  fetchImpl = globalThis.fetch
+) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("fetch implementation is required");
+  }
+  return fetchImpl(proofBundleUrl(apiBase, requestedHash));
 }

@@ -18,6 +18,27 @@ REPO = os.path.dirname(DIR)
 passed = 0
 failed = 0
 
+EVENT_LABELS = {
+    0x01: "PROGRAM_ENTRY",
+    0x02: "OWNERSHIP_ATTEST",
+    0x03: "CONTRACT_ANCHOR",
+    0x04: "DEPLOYMENT",
+    0x05: "HOSTING_PAYMENT",
+    0x06: "SHIELD_RENEWAL",
+    0x07: "TRANSFER",
+    0x08: "EXIT",
+    0x09: "MERKLE_ROOT",
+    0x0A: "STAKING_DEPOSIT",
+    0x0B: "STAKING_WITHDRAW",
+    0x0C: "STAKING_REWARD",
+    0x0D: "GOVERNANCE_PROPOSAL",
+    0x0E: "GOVERNANCE_VOTE",
+    0x0F: "GOVERNANCE_RESULT",
+    0x40: "AGENT_REGISTER",
+    0x41: "AGENT_POLICY",
+    0x42: "AGENT_ACTION",
+}
+
 
 def check(label, ok, detail=""):
     global passed, failed
@@ -31,10 +52,48 @@ def check(label, ok, detail=""):
 
 def run_bin(name, args):
     result = subprocess.run(
-        ["cargo", "run", "--quiet", "--bin", name, "--"] + args,
+        ["cargo", "run", "--quiet", "--locked", "--bin", name, "--"] + args,
         capture_output=True, text=True, cwd=REPO
     )
     return result
+
+
+def classify_memo_fixture(vec):
+    if "hex" in vec:
+        raw = bytes.fromhex(vec["hex"])
+    else:
+        raw = vec["raw"].encode("utf-8")
+
+    if not raw or all(byte == 0 for byte in raw):
+        return {"format": "empty"}
+    if raw[0] == 0xF6:
+        return {"format": "empty" if all(byte == 0 for byte in raw[1:]) else "unknown"}
+    if raw[0] == 0xFF:
+        return {"format": "binary"}
+    if raw[0] == 0xF7 or raw[0] == 0xF5 or raw[0] in range(0xF8, 0xFF):
+        return {"format": "unknown"}
+
+    try:
+        text = raw.rstrip(b"\x00").decode("utf-8")
+    except UnicodeDecodeError:
+        return {"format": "unknown"}
+
+    for prefix, fmt in (("ZAP1:", "zap1"), ("NSM1:", "nsm1")):
+        if text.startswith(prefix):
+            parts = text.split(":")
+            if (
+                len(parts) == 3
+                and len(parts[1]) == 2
+                and len(parts[2]) == 64
+                and all(ch in "0123456789abcdefABCDEF" for ch in parts[1] + parts[2])
+            ):
+                event_type = int(parts[1], 16)
+                return {
+                    "format": fmt,
+                    "type": f"0x{event_type:02x}",
+                    "label": EVENT_LABELS.get(event_type, "UNKNOWN"),
+                }
+    return {"format": "text", "text": text}
 
 
 def main():
@@ -102,14 +161,39 @@ def main():
         else:
             continue
 
-        result = subprocess.run(
-            ["cargo", "run", "--quiet", "--bin", "zap1", "--"],
-            input=hex_input,
-            capture_output=True, text=True, cwd=REPO
+        observed = classify_memo_fixture(vec)
+        expected = {
+            "format": vec["expected_format"],
+            **({"type": vec["expected_type"]} if "expected_type" in vec else {}),
+            **({"label": vec["expected_label"]} if "expected_label" in vec else {}),
+            **({"text": vec["expected_text"]} if "expected_text" in vec else {}),
+        }
+        observed_contract = {key: observed.get(key) for key in expected}
+        check(
+            f"memo vector: {vec['description'][:40]}",
+            observed_contract == expected,
+            f"expected {expected}, got {observed_contract}",
         )
-        # memo decode is via API, use the schema for format check
-        # for now just verify the vector file is parseable
-        check(f"memo vector: {vec['description'][:40]}", True)
+
+    decoder_tests = subprocess.run(
+        [
+            "cargo",
+            "test",
+            "--quiet",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            os.path.join(REPO, "zcash-memo-decode", "Cargo.toml"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+    )
+    check(
+        "zcash-memo-decode crate tests",
+        decoder_tests.returncode == 0,
+        decoder_tests.stderr[-160:].strip(),
+    )
 
     print()
     print(f"{passed} pass, {failed} fail")

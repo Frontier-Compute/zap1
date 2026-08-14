@@ -31,7 +31,7 @@ jobs:
 
       - name: Rust verifier fingerprints
         run: |
-          cargo run --quiet --manifest-path equivalence/rust/Cargo.toml -- \
+          cargo run --quiet --locked --manifest-path equivalence/rust/Cargo.toml -- \
             equivalence/corpus.json > "$RUNNER_TEMP/fp-rust.txt"
 
       - name: TypeScript verifier fingerprints

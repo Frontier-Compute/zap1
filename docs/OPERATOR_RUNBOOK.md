@@ -1,188 +1,171 @@
 # ZAP1 Operator Runbook
 
-Run one ZAP1 instance against your own Zebra node.
+This runbook starts, checks, backs up, upgrades, and rolls back one deployment.
+The build and setup procedure is in [OPERATOR_GUIDE.md](../OPERATOR_GUIDE.md).
 
-## 1. Requirements
+## 1. Frozen inputs
 
-- Rust 1.85.1 if running from source
-- Docker if running the container image
-- Zebra RPC reachable from the ZAP1 process
-- One Orchard UFVK dedicated to this instance
-- Disk for the SQLite database
-- Optional: `zingo-cli` for anchor automation
+Before first start, retain:
 
-## 2. Core components
+- exact Git revision
+- exact Git tree
+- runtime-source manifest hash
+- Dockerfile hash
+- exact Docker image ID
+- build receipt and its `.sha256` sidecar
+- generated operator directory
+- pinned evaluator checker and schema hashes in the generated `run.sh`
 
-- `zap1`: API, scanner, Merkle store, anchor loop
-- `zap1_ops`: operator status rollup
-- `zap1_audit`: standalone proof verifier
-- `anchor_root`: manual anchor sender and recorder
+The compose service must use the `sha256:...` image ID, never a mutable tag.
+`pull_policy: never` and `--no-build --pull never` are part of the gate.
 
-## 3. Required environment
-
-`zap1` reads these env vars:
+## 2. Start
 
 ```bash
-UFVK=uview1...
-NETWORK=Mainnet
-ZEBRA_RPC_URL=http://127.0.0.1:8232
-LISTEN_ADDR=127.0.0.1:3080
-DB_PATH=/data/zap1.db
-SCAN_FROM_HEIGHT=3284026
-API_KEY=...
+cd operators/myoperator
+./run.sh
 ```
 
-Notes:
+`run.sh` verifies its pinned checker and schema before Compose starts. It then
+binds `/build/info` to the sealed revision, tree, source manifest, build
+assurance, and image ID before allowing scanner catch-up. Readiness requires
+RPC reachability, consistent heights, and lag within the configured limit. The
+final schema and source-parity check uses the pinned evaluator bytes. Any red
+gate stops the container.
 
-- `UFVK` is required
-- `NETWORK` accepts `Mainnet` or falls back to testnet
-- `DB_PATH` defaults to `/data/zap1.db` in code
-- `.env.example` still says `/data/nsm1.db`; use `/data/zap1.db` for new installs
-
-## 4. Anchor automation environment
-
-Anchor automation is enabled only when `ANCHOR_ZINGO_CLI` is set.
+Defaults are a 3600 second startup deadline, a 5 second poll interval, and a
+10 block maximum sync lag. For a larger initial scan window:
 
 ```bash
-ANCHOR_ZINGO_CLI=/usr/local/bin/zingo-cli
-ANCHOR_CHAIN=mainnet
-ANCHOR_SERVER=http://127.0.0.1:8232
-ANCHOR_DATA_DIR=/var/lib/zingo
-ANCHOR_TO_ADDRESS=u1...
-ANCHOR_AMOUNT_ZAT=1000
-ANCHOR_THRESHOLD=10
-ANCHOR_INTERVAL_HOURS=24
-ANCHOR_WEBHOOK_URL=https://example.com/hook
+ZAP1_STARTUP_WAIT_SECONDS=7200 ./run.sh
 ```
 
-Optional failure alerts:
+## 3. Boot checks
 
 ```bash
-SIGNAL_NUMBER=+15551234567
-SIGNAL_API_URL=http://127.0.0.1:8080
+curl -sf http://127.0.0.1:3081/build/info | python3 -m json.tool
+curl -sf http://127.0.0.1:3081/health | python3 -m json.tool
+curl -sf http://127.0.0.1:3081/protocol/info | python3 -m json.tool
+curl -sf http://127.0.0.1:3081/stats | python3 -m json.tool
+curl -sf http://127.0.0.1:3081/anchor/status | python3 -m json.tool
 ```
 
-## 5. Docker path
+Require:
 
-Build and run:
+- `/build/info.deployment.image_id` equals the receipt image ID
+- deployment revision, source tree, and source manifest equal the receipt
+- build metadata is complete, locked, path-remapped, and manifest-verified
+- Zebra RPC is reachable
+- scanner state is operational after catch-up
+- stats classify every stored leaf
 
-```bash
-docker build -t zap1:latest .
-docker run -d \
-  --name zap1 \
-  --restart unless-stopped \
-  --network host \
-  -v /srv/zap1-data:/data \
-  --env-file .env.mainnet \
-  zap1:latest
-```
+Anchor freshness is a separate state. Do not turn stale anchoring into a green
+build verdict.
 
-The container starts `zap1` by default. Do not override the command with `nsm1`.
-
-## 6. Source path
+## 4. Monitoring
 
 ```bash
-cargo build --release
-UFVK=... NETWORK=Mainnet ZEBRA_RPC_URL=http://127.0.0.1:8232 \
-LISTEN_ADDR=127.0.0.1:3080 DB_PATH=/data/zap1.db \
-./target/release/zap1
-```
-
-## 7. Boot checks
-
-Check:
-
-```bash
-curl -s http://127.0.0.1:3080/protocol/info
-curl -s http://127.0.0.1:3080/health
-curl -s http://127.0.0.1:3080/stats
-curl -s http://127.0.0.1:3080/anchor/status
-```
-
-Expect `protocol=ZAP1`, `rpc_reachable=true`, `scanner_operational=true`, and `sync_lag` near zero once caught up.
-
-## 8. Monitoring
-
-Primary operator command:
-
-```bash
-cargo run --bin zap1_ops -- --base-url http://127.0.0.1:3080 --json
-```
-
-Interpretation: `ok` = healthy, `warn` = operator attention needed, `critical` = inconsistency or degraded state.
-
-Watch `scanner.sync_lag`, `anchors.last_anchor_age_hours`, `anchors.unanchored_leaves`, and `queue.pending_invoices`.
-
-Nightly public check:
-
-```bash
+cargo run --locked --bin zap1_ops -- --base-url http://127.0.0.1:3081 --json
 python3 scripts/check_anchor_liveness.py
 ```
 
-## 9. Manual anchor path
+Monitor:
 
-If automation is disabled or degraded:
+- scanner sync lag and last successful scan
+- Zebra RPC reachability
+- unanchored leaf count
+- last anchor age
+- pending invoices and broadcast journal state
+- agreement among `/stats`, `/anchor/history`, and `/anchor/status`
+
+## 5. Anchor procedure
+
+Default state is `ANCHOR_BROADCAST_ENABLED=false`. The generated deployment
+has no signer. Automatic `zingo-cli quicksend` is unsupported.
+
+Only after an exact transaction authorization:
+
+1. Fetch `/admin/anchor/qr` with `Authorization: Bearer ...`.
+2. Check the root and amount before approving the external-wallet send.
+3. Wait for confirmation.
+4. POST root, txid, and height to `/admin/anchor/record` with the same header.
+5. Re-read `/anchor/status` and `/anchor/history`.
+
+Never put an API key in a URL or query string. Never infer send authority from
+a configured binary, key, seed, wallet, queue, or stale prior approval.
+
+## 6. Backup
+
+Use SQLite online backup while the service is live:
 
 ```bash
-cargo run --bin anchor_root -- send \
-  --db /data/zap1.db \
-  --zingo-cli /usr/local/bin/zingo-cli \
-  --chain mainnet \
-  --server http://127.0.0.1:8232 \
-  --data-dir /var/lib/zingo \
-  --to u1... \
-  --amount-zat 1000
+cd operators/myoperator
+sqlite3 data/zap1.db ".backup /secure/backup/zap1-$(date -u +%Y%m%dT%H%M%SZ).db"
 ```
 
-After the transaction confirms:
+Record the backup hash:
 
 ```bash
-cargo run --bin anchor_root -- record \
-  --db /data/zap1.db \
-  --root <root_hash> \
-  --txid <txid> \
-  --height <block_height>
+sha256sum /secure/backup/zap1-*.db
 ```
 
-## 10. Failure recovery
+Protect the backup as restricted operational data. It can contain submitted
+subject identifiers and transaction records.
 
-Scanner unhealthy:
+## 7. Upgrade
 
-- verify Zebra is up and RPC is reachable
+Never rebuild through Compose and never retag `latest`.
+
+1. Check out the reviewed target commit in a clean tree.
+2. Run `scripts/build_image.sh`.
+3. Preserve the new receipt and sidecar.
+4. Back up the database.
+5. Run `scripts/operator-setup.sh` into a new operator directory or verify the
+   new receipt manually before changing the existing image ID.
+6. Start the exact new image ID.
+7. Require exact `/build/info` parity plus health, scanner, stats, and anchor
+   checks.
+8. Preserve the prior receipt and image ID for rollback.
+
+A changed commit, tree, manifest, Dockerfile, image ID, database schema, or
+authority reopens the deployment gate.
+
+## 8. Rollback
+
+Rollback means restoring the prior exact image ID and a database state
+compatible with that image. Do not guess schema compatibility.
+
+1. Stop writes.
+2. Preserve the failed image logs, `/build/info`, and database copy.
+3. Restore the prior pinned compose file and compatible database backup.
+4. Start with `--no-build --pull never`.
+5. Re-run exact build parity and operational checks.
+
+## 9. Failure handling
+
+Scanner red:
+
+- verify Zebra independently
 - verify `ZEBRA_RPC_URL`
-- run `zap1_ops`
-- restart `zap1` only after RPC is good
+- inspect scanner lag and logs
+- restart only after the dependency is healthy
 
-Anchor failures:
+Build parity red:
 
-- verify `ANCHOR_ZINGO_CLI`, `ANCHOR_SERVER`, `ANCHOR_DATA_DIR`, `ANCHOR_TO_ADDRESS`
-- check the anchor loop backoff in logs
-- use `anchor_root send` if automation is blocked
+- stop promotion
+- compare the receipt, image labels, embedded `BUILD_INFO`, and live
+  `/build/info`
+- do not accept a green health endpoint as an override
 
-State drift:
+Anchor red:
 
-- compare `/stats`, `/anchor/history`, and `/anchor/status`
-- run `zap1_ops`
-- if proof output looks wrong, regenerate from the anchored root that covers the leaf
+- leave broadcast disabled
+- inspect the prepared/broadcast journal and current root
+- use the authorized external-wallet flow only if transaction authority is fresh
 
-## 11. Proof verification
+Proof red:
 
-Verify a published bundle without trusting the API:
-
-```bash
-cargo run --bin zap1_audit -- --bundle examples/live_ownership_attest_proof.json
-```
-
-Or against a live bundle URL:
-
-```bash
-cargo run --bin zap1_audit -- --bundle-url https://pay.example.com/verify/<leaf_hash>/proof.json
-```
-
-This checks the Merkle proof locally. You still need to confirm the txid and memo on-chain.
-
-## 12. Logs
-
-The service logs network, Zebra RPC target, scan start height, UFVK load result, DB open, scanner start, and anchor automation state.
-
-`Anchor automation disabled (ANCHOR_ZINGO_CLI not set)` means the API is healthy and only automated anchoring is off.
+- preserve the bundle bytes
+- recompute its count-bound Merkle path locally
+- keep proof consistency, transaction existence, and encrypted memo binding as
+  three separate rulings

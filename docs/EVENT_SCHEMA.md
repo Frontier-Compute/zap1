@@ -1,6 +1,9 @@
 # ZAP1 Event Schema v1.0
 
-Typed event definitions for the ZAP1 attestation protocol. Each event commits a BLAKE2b-256 hash of its payload fields to the Merkle tree, anchored on Zcash mainnet via shielded memos.
+Typed event definitions for the ZAP1 implementation profile. Each event commits
+a BLAKE2b-256 hash of its payload fields to a Merkle tree. The API can record a
+Zcash transaction reference for a root. Transaction existence does not reveal
+an encrypted memo or independently prove that the memo contains the root.
 
 Personalization: `NordicShield_` (leaf), `NordicShield_MRK` (tree node).
 
@@ -12,18 +15,27 @@ ZAP1:{type_hex}:{payload_hash_hex}
 
 Legacy prefix `NSM1` is accepted during decode.
 
+Field names such as `wallet_hash` are historical API names. The service checks
+bounds but does not derive a hash or pseudonym for the caller. Integrators must
+derive domain-separated pseudonymous values before submission. Public event
+feeds and proof bundles withhold stored subject preimages. The
+`/miner/{wallet_hash}` route family, `/lifecycle/{wallet_hash}`, and full
+`GET /invoice/{id}` JSON route require operator bearer authentication. Payment
+pages use UUID invoice URLs as bearer capabilities and can disclose a payment
+request to anyone who obtains the URL.
+
 ## Event types
 
 ### 0x01 PROGRAM_ENTRY
 
-Participant joined the program.
+Operator claim that a subject joined the program.
 
 ```
 payload = BLAKE2b-256("NordicShield_", 0x01 || wallet_hash_bytes)
 ```
 
 Fields:
-- `wallet_hash`: BLAKE2b-256 of participant's Zcash unified address (raw bytes, no length prefix)
+- `wallet_hash`: operator-supplied pseudonymous subject identifier (raw bytes, no length prefix)
 
 Note: PROGRAM_ENTRY is the only type that does not length-prefix its field. All other types use 2-byte big-endian length prefixes.
 
@@ -143,14 +155,71 @@ This is the anchor event. The root commits the state of all prior leaves.
 
 Issued when: anchor automation fires (threshold count or interval).
 
-### 0x0A-0x0C (Reserved)
+### 0x0A STAKING_DEPOSIT
 
-Reserved for Crosslink staking integration:
-- `0x0A` STAKING_DEPOSIT
-- `0x0B` STAKING_WITHDRAW
-- `0x0C` STAKING_REWARD
+```
+payload = BLAKE2b-256("NordicShield_", 0x0A || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+```
 
-Not deployed. Schema will be published when staking integration begins.
+### 0x0B STAKING_WITHDRAW
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x0B || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+```
+
+### 0x0C STAKING_REWARD
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x0C || len(wallet_hash) || wallet_hash || amount_zat_be || epoch_be)
+```
+
+These three constructions are implemented and accepted by `POST /event`. They
+commit operator-supplied staking claims; they do not inspect or prove Crosslink
+consensus state.
+
+### 0x0D GOVERNANCE_PROPOSAL
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x0D || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(proposal_hash) || proposal_hash)
+```
+
+### 0x0E GOVERNANCE_VOTE
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x0E || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(vote_commitment) || vote_commitment)
+```
+
+### 0x0F GOVERNANCE_RESULT
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x0F || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(result_hash) || result_hash)
+```
+
+These are operator-submitted governance claims. They do not prove proposal
+validity, voter eligibility, vote secrecy, tally correctness, or a Zcash
+governance outcome.
+
+### 0x40 AGENT_REGISTER
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)
+```
+
+### 0x41 AGENT_POLICY
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x41 || len(agent_id) || agent_id || policy_version_be || len(rules_hash) || rules_hash)
+```
+
+### 0x42 AGENT_ACTION
+
+```
+payload = BLAKE2b-256("NordicShield_", 0x42 || len(agent_id) || agent_id || len(action_type) || action_type || len(input_hash) || input_hash || len(output_hash) || output_hash)
+```
+
+These are operator-submitted agent claims. They do not attest model identity,
+provider identity, authorization, tool execution, policy compliance, or the
+truth of inputs and outputs. Those require separate evidence and authority.
 
 ## Length-prefix encoding
 
@@ -168,13 +237,18 @@ Given a leaf hash from a proof bundle:
 2. Hash with BLAKE2b-256 and `NordicShield_` personalization
 3. Compare to the leaf hash in the proof bundle
 4. Walk the Merkle proof using `NordicShield_MRK` personalization
-5. Compare the derived root to the anchored root on-chain
+5. Compare the derived root to the root supplied in the proof bundle
+6. Check the recorded transaction exists at the stated height; encrypted memo
+   binding requires a separate safe disclosure/opening artifact
 
 SDK: [zap1-verify](https://github.com/Frontier-Compute/zap1-verify) (Rust + WASM)
 JS: [zap1-js](https://github.com/Frontier-Compute/zap1-js)
 
 ## ZIP 302 target encoding
 
-When ZIP 302 structured memos ship, ZAP1 payloads will be carried as a registered `partType` in the TVLV container (0xF7 prefix). The current wire format (`ZAP1:{type}:{hash}`) is the transitional encoding.
+If a compatible ZIP 302 structured-memo assignment is approved, ZAP1 payloads
+could be carried in the TVLV container (`0xF7` prefix). No assignment, merge,
+or adoption is claimed. The active implementation profile uses
+`ZAP1:{type}:{hash}`.
 
 Reference encoder/decoder: `cargo run --bin zip302_tvlv`

@@ -1,17 +1,11 @@
 import { useState, useCallback } from "react";
 import {
-  blake2b256,
-  hexToBytes,
-  bytesToHex,
-  computeLeafHash,
-  walkProof,
-  isHistoricalLegacyBundle,
-  COUNT_BOUND_SCHEME,
+  DEFAULT_API_BASE,
   LEGACY_SCHEME,
   LEGACY_ROOT_MAX_ANCHOR_HEIGHT,
+  fetchProofBundle,
+  verifyProofBundle,
 } from "./blake2b.js";
-
-const API = "https://api.frontiercompute.cash";
 
 // Styles
 
@@ -285,7 +279,7 @@ const s = {
 
 function truncHash(h, n = 12) {
   if (!h || h.length <= n * 2) return h || "";
-  return `${h.slice(0, n)}…${h.slice(-n)}`;
+  return `${h.slice(0, n)}...${h.slice(-n)}`;
 }
 
 function CheckSVG({ ok }) {
@@ -314,7 +308,10 @@ function SkipSVG() {
   );
 }
 
-export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
+export default function ProofVerifier({
+  leafHash: propLeafHash,
+  apiBase = DEFAULT_API_BASE,
+} = {}) {
   const [inputHash, setInputHash] = useState(propLeafHash || "");
   const [bundle, setBundle] = useState(null);
   const [result, setResult] = useState(null); // { leafMatch, rootMatch, computedRoot, steps, leafRecomputed, recomputedHash }
@@ -330,70 +327,21 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
     setResult(null);
 
     try {
-      const res = await fetch(`${API}/verify/${h}/proof.json`);
+      const res = await fetchProofBundle(apiBase, h);
       if (!res.ok) {
         if (res.status === 404) throw new Error("Proof not found for this leaf hash");
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json();
+      const verification = verifyProofBundle(data, h);
       setBundle(data);
-
-      // Client-side verification
-
-      // 1. Try to recompute leaf hash
-      let leafRecomputed = false;
-      let leafMatch = null;
-      let recomputedHash = null;
-
-      if (data.leaf && data.leaf.wallet_hash) {
-        const computed = computeLeafHash(
-          data.leaf.event_type,
-          data.leaf.wallet_hash,
-          data.leaf.serial_number
-        );
-        if (computed) {
-          recomputedHash = bytesToHex(computed);
-          leafMatch = recomputedHash === data.leaf.hash;
-          leafRecomputed = true;
-        }
-      }
-
-      // 2. Walk the Merkle proof
-      const { computedRoot, legacyRoot, steps } = walkProof(
-        data.leaf.hash,
-        data.proof,
-        data.root.leaf_count
-      );
-
-      // 3. Compare
-      const rootMatchV2 = data.root.leaf_count != null && computedRoot === data.root.hash;
-      const rootMatchLegacy = legacyRoot === data.root.hash;
-      const legacyAllowed = rootMatchLegacy && isHistoricalLegacyBundle(data);
-      const rootMatch = rootMatchV2 || legacyAllowed;
-      const rootScheme = rootMatchV2
-        ? COUNT_BOUND_SCHEME
-        : rootMatchLegacy
-          ? LEGACY_SCHEME
-          : "INVALID";
-
-      setResult({
-        leafMatch,
-        rootMatch,
-        rootScheme,
-        rootMatchLegacy,
-        legacyAllowed,
-        computedRoot,
-        legacyRoot,
-        steps,
-        leafRecomputed,
-        recomputedHash,
-      });
+      setResult(verification);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [inputHash]);
+  }, [apiBase, inputHash]);
 
   const handleDownload = () => {
     if (!bundle) return;
@@ -406,7 +354,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
     URL.revokeObjectURL(url);
   };
 
-  const allVerified = result && result.rootMatch && (result.leafMatch === null || result.leafMatch);
+  const merkleMatches = result && result.requestMatch && result.rootMatch && result.leafMatch !== false;
 
   return (
     <div style={s.container}>
@@ -419,7 +367,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
         )}
       </div>
       <p style={s.subtitle}>
-        Zero-trust in-browser Merkle proof verification. No server involved.
+        Client-side Merkle-bundle consistency check from {apiBase}. Root publication and event truth are not verified.
       </p>
 
       {!propLeafHash && (
@@ -427,7 +375,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
           <input
             style={s.input}
             type="text"
-            placeholder="Enter leaf hash…"
+            placeholder="Enter leaf hash..."
             value={inputHash}
             onChange={(e) => setInputHash(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && verify()}
@@ -443,19 +391,19 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
       )}
 
       {error && <div style={s.error}>{error}</div>}
-      {loading && <div style={s.loading}>Fetching and verifying proof…</div>}
+      {loading && <div style={s.loading}>Fetching and verifying proof...</div>}
 
       {result && bundle && (
         <>
           {/* Verdict banner */}
-          <div style={{ ...s.resultBanner, ...(allVerified ? s.verified : s.failed) }}>
-            {allVerified ? (
+          <div style={{ ...s.resultBanner, ...(merkleMatches ? s.verified : s.failed) }}>
+            {merkleMatches ? (
               <>
                 <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                   <circle cx="11" cy="11" r="10" stroke="currentColor" strokeWidth="2" />
                   <path d="M6 11l3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                VERIFIED - Proof is cryptographically valid
+                MERKLE MATCH - Supplied leaf hash is included under the supplied root
               </>
             ) : (
               <>
@@ -472,13 +420,19 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
           <div style={{ ...s.card, marginBottom: "16px" }}>
             <div style={s.sectionTitle}>Verification Checks</div>
             <div style={s.leafCheck}>
+              <CheckSVG ok={result.requestMatch} />
+              <span style={{ color: result.requestMatch ? "#22c55e" : "#ef4444" }}>
+                Returned leaf hash matches the requested leaf hash
+              </span>
+            </div>
+            <div style={s.leafCheck}>
               {result.leafRecomputed ? <CheckSVG ok={result.leafMatch} /> : <SkipSVG />}
               <span style={{ color: result.leafRecomputed ? (result.leafMatch ? "#22c55e" : "#ef4444") : "#6b7280" }}>
                 {result.leafRecomputed
                   ? result.leafMatch
                     ? "Leaf hash recomputed from event data - matches"
                     : "Leaf hash recomputed - MISMATCH"
-                  : `Leaf recomputation skipped (${bundle.leaf.event_type} formula not implemented client-side)`}
+                  : "Claimed event type is not authenticated without a recomputed typed witness"}
               </span>
             </div>
             <div style={s.leafCheck}>
@@ -491,7 +445,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
             </div>
             {result.rootScheme === LEGACY_SCHEME && result.legacyAllowed && (
               <div style={{ fontSize: "12px", color: "#f59e0b", marginTop: "8px" }}>
-                Legacy root: historical anchor verified through block {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}; leaf count is not bound by this root.
+                Legacy supplied root accepted only with an API-recorded height through {LEGACY_ROOT_MAX_ANCHOR_HEIGHT}; leaf count is not bound by this root.
               </div>
             )}
             {result.rootScheme === LEGACY_SCHEME && !result.legacyAllowed && (
@@ -506,7 +460,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
             <div style={s.sectionTitle}>Leaf</div>
             <div style={s.infoGrid}>
               <div style={s.infoItem}>
-                <span style={s.infoLabel}>Event Type</span>
+                <span style={s.infoLabel}>Claimed Event Type</span>
                 <span style={s.eventBadge}>{bundle.leaf.event_type}</span>
               </div>
               <div style={s.infoItem}>
@@ -550,7 +504,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                 const isLast = i === result.steps.length - 1;
                 return (
                   <div key={i} style={s.pathStep}>
-                    <div style={s.pathArrow}>↓</div>
+                    <div style={s.pathArrow}>v</div>
                     <div style={s.pairRow}>
                       <div
                         style={{
@@ -582,7 +536,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                         {truncHash(sibPos === "right" ? sibHash : step.right, 10)}
                       </div>
                     </div>
-                    <div style={s.pathArrow}>↓</div>
+                    <div style={s.pathArrow}>v</div>
                     <div
                       style={{
                         ...s.pathNode,
@@ -634,9 +588,9 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
           </div>
 
           {/* Anchor */}
-          {bundle.anchor && (
+          {bundle.anchor?.txid && (
             <div style={s.card}>
-              <div style={s.sectionTitle}>On-Chain Anchor</div>
+              <div style={s.sectionTitle}>API-Recorded Transaction Reference</div>
               <div style={s.anchorRow}>
                 <a
                   href={`https://blockchair.com/zcash/transaction/${bundle.anchor.txid}`}
@@ -645,9 +599,9 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                   style={s.anchorLink}
                   title={bundle.anchor.txid}
                 >
-                  {truncHash(bundle.anchor.txid, 20)} ↗
+                  {truncHash(bundle.anchor.txid, 20)} [external]
                 </a>
-                {bundle.anchor.height && (
+                {bundle.anchor.height != null && (
                   <span style={s.anchorBlock}>
                     Block {bundle.anchor.height.toLocaleString()}
                   </span>
@@ -664,7 +618,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
           {/* Actions */}
           <div style={s.actions}>
             <button style={s.buttonOutline} onClick={handleDownload}>
-              ↓ Download Proof Bundle
+              Download Proof Bundle
             </button>
             {bundle.verify_command && (
               <button
@@ -672,7 +626,7 @@ export default function ProofVerifier({ leafHash: propLeafHash } = {}) {
                 onClick={() => navigator.clipboard.writeText(bundle.verify_command)}
                 title={bundle.verify_command}
               >
-                ⎘ Copy CLI Command
+                Copy CLI Command
               </button>
             )}
           </div>

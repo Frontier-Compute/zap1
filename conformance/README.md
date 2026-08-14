@@ -1,6 +1,8 @@
 # ZAP1 Conformance Kit
 
-Test your implementation against the ZAP1 protocol contract. If your code produces the same hashes and accepts the same proof bundles, it is conformant.
+Test an implementation against the checked ZAP1 implementation profile. A
+green run shows agreement on this corpus. It does not establish protocol
+correctness, transaction completeness, event truth, or independent adoption.
 
 ## Quick check
 
@@ -14,7 +16,7 @@ python3 conformance/check.py
 2. **Merkle tree**: root computation from known leaves using NordicShield_MRK personalization
 3. **Proof verification**: accept valid proof bundles, reject invalid ones
 4. **Memo wire format**: encode/decode ZAP1:{type}:{hash} strings
-5. **Export packages**: parse and verify audit export packages
+5. **Export packages**: parse and check Merkle consistency of audit exports
 
 ## Fixtures
 
@@ -39,4 +41,6 @@ If you are building a ZAP1 implementation in any language:
 
 ## Adding vectors
 
-New vectors should include mainnet anchor data where possible. The hash vectors from block 3,286,631 are the canonical reference.
+New vectors should prefer synthetic inputs with explicit provenance. Historical
+mainnet transaction references may be included, but a txid and height do not
+reveal an encrypted memo or authenticate an operator-issued event claim.

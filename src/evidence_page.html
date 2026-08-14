@@ -424,30 +424,34 @@
       <div class="toplinks">
         <a href="/stats">Stats</a>
         <a href="/health">Health</a>
-        <a href="/anchor/history">Anchors</a>
+        <a href="/anchor/history">Tx records</a>
         <a href="https://github.com/Frontier-Compute/zap1">Source</a>
       </div>
     </nav>
 
     <main>
+      <aside class="side-note" aria-label="Grant scope">
+        <strong>Application #31 | $28,000 | March-May 2026 application submitted May 12, 2026 at 21:25 UTC</strong>
+        Live metrics and the current proof example can include later maintenance and evaluator aids. They add nothing to the requested amount and are not presented as additional grant-scope deliverables. Review the <a href="https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31">official application</a> and its <a href="https://forum.zcashcommunity.com/t/retroactive-grant-application-zap1-attestation-protocol-and-verification-tooling/55664">forum mirror</a>.
+      </aside>
       <section class="hero" aria-labelledby="title">
         <div>
           <div class="eyebrow">retroactive grant proof surface</div>
-          <h1 id="title">ZAP1 makes Zcash attestations inspectable without making private records public.</h1>
+          <h1 id="title">ZAP1 makes typed Zcash application commitments inspectable without putting event preimages in Orchard memos.</h1>
           <p class="lead">
-            A completed, MIT-licensed attestation layer: typed lifecycle events, BLAKE2b Merkle roots, Orchard memo anchors, public proof bundles, and independent verification tooling.
+            A completed, MIT-licensed reference implementation: typed lifecycle events, BLAKE2b Merkle roots, historical Zcash transaction records, public proof bundles, and local verification tooling.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="/anchor/history">Inspect anchor history</a>
             <a class="button" href="/protocol/info">Read protocol info</a>
-            <a class="button" href="https://github.com/zcash/zips/pull/1243">View ZIP draft</a>
+            <a class="button" href="https://github.com/Frontier-Compute/zap1/commit/59279222584e490f099a2f358c248cab5e800466">Reference commit</a>
           </div>
         </div>
 
         <figure class="proof-visual" aria-label="ZAP1 proof chain diagram">
           <svg viewBox="0 0 640 520" role="img" aria-labelledby="diagram-title diagram-desc">
             <title id="diagram-title">ZAP1 proof chain</title>
-            <desc id="diagram-desc">Lifecycle event commitments become Merkle leaves, roots, Zcash anchors, proof bundles, and verifier output.</desc>
+            <desc id="diagram-desc">Lifecycle event commitments become Merkle leaves, supplied roots, API-recorded Zcash transaction references, proof bundles, and verifier output.</desc>
             <rect x="24" y="24" width="592" height="472" rx="8" fill="#12100c" stroke="#3d3426"/>
             <path d="M112 110 H528" stroke="#f4b84f" stroke-width="3"/>
             <path d="M112 210 H528" stroke="#23c7ad" stroke-width="3"/>
@@ -468,8 +472,8 @@
               <text x="270" y="128" fill="#c9bfa8">BLAKE2b</text>
               <text x="454" y="104" fill="#f8f0df">root</text>
               <text x="454" y="128" fill="#c9bfa8">Merkle</text>
-              <text x="86" y="304" fill="#f8f0df">memo</text>
-              <text x="86" y="328" fill="#c9bfa8">Orchard</text>
+              <text x="86" y="304" fill="#f8f0df">tx ref</text>
+              <text x="86" y="328" fill="#c9bfa8">recorded</text>
               <text x="270" y="304" fill="#f8f0df">bundle</text>
               <text x="270" y="328" fill="#c9bfa8">proof.json</text>
               <text x="454" y="304" fill="#f8f0df">verify</text>
@@ -490,9 +494,9 @@
 
       <section class="metrics" aria-label="Current ZAP1 metrics">
         <div class="metric">
-          <span>Mainnet anchors</span>
+          <span>Public anchor records</span>
           <strong>{TOTAL_ANCHORS}</strong>
-          <small>Anchored roots with Zcash txids</small>
+          <small>API-recorded Zcash transaction references</small>
         </div>
         <div class="metric">
           <span>Committed leaves</span>
@@ -500,9 +504,9 @@
           <small>Includes our own demo and test traffic</small>
         </div>
         <div class="metric">
-          <span>Event types</span>
+          <span>Defined event types</span>
           <strong>{EVENT_TYPES_TRACKED}</strong>
-          <small>Public stats classes tracked today</small>
+          <small>Canonical protocol registry; /stats reports every known type</small>
         </div>
         <div class="metric">
           <span>Network</span>
@@ -517,35 +521,35 @@
             <div class="eyebrow">what this is for</div>
             <h2 id="usecase-title">Receipts for work that machines claim to have done.</h2>
           </div>
-          <p>Automated systems report what they did, and those reports are normally trust-me claims: a dashboard number an outsider cannot recompute. A ZAP1 receipt is the same claim in checkable form.</p>
+          <p>Automated systems report what they did, and those reports are normally trust-me claims. A ZAP1 bundle lets an outsider recompute whether a supplied leaf is included in a supplied root. It does not prove the underlying event happened.</p>
         </div>
         <div class="steps">
           <article class="tile">
             <span class="num">a</span>
             <h3>Agent actions</h3>
-            <p>Agents commit hash-only receipts of registrations, policies, and actions. The tree carries live <code>AGENT_ACTION</code> leaves today; the worked example below is one of them.</p>
+            <p>Agents submit registration, policy, and action claims. Public bundles expose the leaf hash and path while withholding stored subject preimages. Inclusion does not attest model identity, authorization, execution, or policy compliance.</p>
           </article>
           <article class="tile">
             <span class="num">b</span>
             <h3>Evaluation verdicts</h3>
-            <p>A published Inspect AI hook (<code>inspect-receipts</code> on PyPI) emits hash-only receipts of evaluation outcomes, with an offline checker that returns MATCH or MISMATCH.</p>
+            <p>The applicant-published <code>inspect-receipts</code> package emits bounded commitments containing hashes, metrics, and coarse identifiers. Its offline checker returns MATCH or MISMATCH against a disclosed eval log. It does not prove the verdict is correct.</p>
           </article>
           <article class="tile">
             <span class="num">c</span>
-            <h3>Lifecycle and payment facts</h3>
-            <p>Machine ownership, deployments, hosting payments, and paid-access events become receipts a counterparty can verify without seeing books, keys, or customer rows.</p>
+            <h3>Lifecycle and payment claims</h3>
+            <p>Operator-issued ownership, deployment, hosting-payment, and paid-access claims become Merkle receipts. Public bundles withhold stored subject fields. Inclusion does not establish that the claimed event occurred or that the operator's records are complete.</p>
           </article>
         </div>
         <div class="statement" style="margin-top: 28px;">
           <div class="quote">
-            <p>Verify a live receipt in under a minute, without trusting this server:</p>
-            <pre style="margin-top: 14px; padding: 14px 16px; border: 1px solid rgba(201, 191, 168, 0.25); border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5;"><code>curl -s https://api.frontiercompute.cash/verify/41792a315c4942da8901d1fd9c12e2598c47ec0e40f3086e2c883ee9c70ead17/proof.json -o proof.json
-python verify_proof.py --proof proof.json</code></pre>
-            <p style="margin-top: 12px;">Expected result: <code>VERIFIED. Count-bound proof is valid. Leaf is included in the published root.</code> The verifier script ships at the <a href="https://github.com/Frontier-Compute/zap1">repo root</a> and re-walks the proof locally.</p>
+            <p>Recompute the March 27 in-window proof fixture in under a minute:</p>
+            <pre style="margin-top: 14px; padding: 14px 16px; border: 1px solid rgba(201, 191, 168, 0.25); border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5;"><code>curl -s https://raw.githubusercontent.com/Frontier-Compute/zap1/59279222584e490f099a2f358c248cab5e800466/examples/live_ownership_attest_proof.json -o proof.json
+python verify_proof.py --proof proof.json --allow-historical-legacy</code></pre>
+            <p style="margin-top: 12px;">The successful historical-legacy branch reports <code>MERKLE MATCH</code> for inclusion under the supplied pre-fix root, followed by its typed-witness and legacy-root warnings. The verifier script ships at the <a href="https://github.com/Frontier-Compute/zap1">repo root</a> and re-walks the downloaded bundle locally. The fixture carries an API-recorded transaction reference, but encrypted memo binding is not independently verified.</p>
           </div>
           <aside class="side-note">
             <strong>Scope, stated plainly</strong>
-            The proof checks inclusion against the published root. That root's next on-chain anchor is pending; prior anchors are listed at <code>/anchor/history</code>. A receipt proves the claim was committed and never changed, not that the claim is true.
+            Check <code>/anchor/status</code> for the current root's publication state. Historical API records list legacy roots with Zcash transaction IDs, and transaction existence is independently checkable. Orchard memo contents are encrypted, so independently binding a listed root to a transaction memo requires a separate disclosure artifact that is not currently published. Neither a Merkle proof nor a transaction proves the underlying event claim is true.
           </aside>
         </div>
       </section>
@@ -562,7 +566,7 @@ python verify_proof.py --proof proof.json</code></pre>
           <article class="tile">
             <span class="num">01</span>
             <h3>Commit an event</h3>
-            <p>Applications create typed lifecycle events without publishing private rows or raw customer data.</p>
+            <p>Applications submit typed operator claims. The service stores the submitted fields, while public feeds and proof bundles withhold stored wallet and serial preimages.</p>
           </article>
           <article class="tile">
             <span class="num">02</span>
@@ -571,8 +575,8 @@ python verify_proof.py --proof proof.json</code></pre>
           </article>
           <article class="tile">
             <span class="num">03</span>
-            <h3>Anchor the root</h3>
-            <p>Published roots bind the leaf count and are anchored to Zcash mainnet in ZAP1 structured memos. Anchor txids are published for independent lookup.</p>
+            <h3>Record a transaction reference</h3>
+            <p>The current root binds the leaf count. Historical roots are recorded with Zcash transaction IDs for independent transaction lookup; their encrypted memo contents require separate disclosure material for independent root-to-transaction verification.</p>
           </article>
           <article class="tile">
             <span class="num">04</span>
@@ -582,7 +586,7 @@ python verify_proof.py --proof proof.json</code></pre>
           <article class="tile">
             <span class="num">05</span>
             <h3>Verify offline</h3>
-            <p>The <code>zap1-verify</code> crate and <code>verify_proof.py</code> re-walk proofs without trusting the hosted UI. Independent Python, Rust, and TypeScript verifiers are held byte-identical by a CI-gated equivalence corpus.</p>
+            <p>The <code>zap1-verify</code> crate and <code>verify_proof.py</code> re-walk supplied Merkle proofs locally. Python, Rust, and TypeScript implementations are checked against a shared equivalence corpus. This verifies proof consistency, not encrypted memo contents.</p>
           </article>
         </div>
       </section>
@@ -598,7 +602,7 @@ python verify_proof.py --proof proof.json</code></pre>
         <div class="checks">
           <a class="check-link" href="/stats">
             <b>Live stats</b>
-            <span>Leaves, anchors, event counts, network.</span>
+            <span>Leaves, recorded transaction references, event counts, network.</span>
             <em>/stats</em>
           </a>
           <a class="check-link" href="/health">
@@ -607,7 +611,7 @@ python verify_proof.py --proof proof.json</code></pre>
             <em>/health</em>
           </a>
           <a class="check-link" href="/anchor/history">
-            <b>Anchor history</b>
+            <b>Transaction-reference history</b>
             <span>Root hashes, txids, heights, leaf counts.</span>
             <em>/anchor/history</em>
           </a>
@@ -618,19 +622,51 @@ python verify_proof.py --proof proof.json</code></pre>
           </a>
           <a class="check-link" href="https://crates.io/crates/zap1-verify">
             <b>Rust verifier</b>
-            <span>Independent inclusion verification crate.</span>
+            <span>Published 0.2.1 legacy verifier. The count-bound 0.3.0 candidate is in this repository and is not published.</span>
             <em>crates.io</em>
           </a>
-          <a class="check-link" href="https://www.npmjs.com/package/@frontiercompute/zap1">
-            <b>JS package</b>
-            <span>Application integration surface.</span>
-            <em>npm</em>
+          <a class="check-link" href="https://github.com/Frontier-Compute/zap1/blob/main/verify_proof.py">
+            <b>Python verifier</b>
+            <span>Current count-bound inclusion verifier.</span>
+            <em>GitHub</em>
           </a>
           <a class="check-link" href="https://github.com/Frontier-Compute/zap1/tree/main/equivalence">
             <b>Verifier equivalence</b>
             <span>Frozen corpus; three independent verifiers must agree, checked in CI.</span>
             <em>GitHub</em>
           </a>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="records-title">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">attributed public records</div>
+            <h2 id="records-title">External touchpoints, with receipt status stated plainly.</h2>
+          </div>
+          <p>The digest covers only the records listed in the <a href="https://github.com/Frontier-Compute/zap1/blob/main/evidence/public-records-20260813.json">receipt manifest</a>. Links labeled as unsealed live pointers are excluded from that digest. No independently verified external production adopter is evidenced in this package as of 2026-08-13.</p>
+        </div>
+        <div class="boundary">
+          <article class="tile">
+            <span class="num">FPF</span>
+            <h3>Official Q3 administrative status</h3>
+            <p><strong>Unsealed live pointer:</strong> <a href="https://forum.zcashcommunity.com/t/call-for-proposals-coinholder-directed-retroactive-grants-program-q3/56885">FPF's Q3 call</a> lists ZAP1 but is not part of the 11-record digest. The indexed <a href="https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31">application #31</a> receipt records the issue as Ready For Vote at its observed time. This is administrative state, not technical acceptance or an award.</p>
+          </article>
+          <article class="tile">
+            <span class="num">ZCG</span>
+            <h3>Prior prospective-grant review</h3>
+            <p><strong>Unsealed live pointer:</strong> <a href="https://forum.zcashcommunity.com/t/zcash-community-grants-meeting-minutes-4-13-2026/55349">ZCG's April 13 minutes</a> are not part of the 11-record digest. They record a unanimous decline and cite adoption, complexity, simpler alternatives, and the case for a wider standard. The current request is retroactive. No ZCG endorsement is claimed.</p>
+          </article>
+          <article class="tile">
+            <span class="num">Z</span>
+            <h3>No Zooko endorsement claim</h3>
+            <p>The bounded public search in the receipt manifest found no direct Zooko ZAP1 comment on the checked GitHub and application-forum surfaces. It does not prove absence everywhere. Zooko endorsement, opposition, test, use, and verification are all unclaimed.</p>
+          </article>
+          <article class="tile">
+            <span class="num">D</span>
+            <h3>Daira terminology feedback</h3>
+            <p><a href="https://github.com/zcash/zips/pull/1243#discussion_r3028252127">Daira-Emma Hopwood identified a terminology collision</a>. The captured current head uses <code>label</code>, which is consistent with incorporating that feedback. Review state is COMMENTED, and the ZIP remains a draft; no approval, merge, or standardization is claimed.</p>
+          </article>
         </div>
       </section>
 
@@ -646,22 +682,22 @@ python verify_proof.py --proof proof.json</code></pre>
           <article class="tile">
             <span class="num">yes</span>
             <h3>Completed infrastructure</h3>
-            <p>Open-source protocol code, live mainnet anchoring, public APIs, docs, tests, packages, and verifier tooling.</p>
+            <p>Open-source protocol code, historical mainnet transaction-reference records, public APIs, docs, tests, published legacy packages, and current repository verifier candidates.</p>
           </article>
           <article class="tile">
             <span class="num">yes</span>
-            <h3>Publicly checkable evidence</h3>
-            <p>Current anchor range: <code>{ANCHOR_RANGE}</code>. First block: <code>{FIRST_ANCHOR_BLOCK}</code>. Last block: <code>{LAST_ANCHOR_BLOCK}</code>.</p>
+            <h3>Public transaction-reference records</h3>
+            <p>Recorded transaction-height range: <code>{ANCHOR_RANGE}</code>. First recorded block: <code>{FIRST_ANCHOR_BLOCK}</code>. Last recorded block: <code>{LAST_ANCHOR_BLOCK}</code>.</p>
           </article>
           <article class="tile">
             <span class="num">no</span>
             <h3>Private data theater</h3>
-            <p>No customer rows, no viewing keys, no custody claims, no hidden dashboards required. No vibes were trusted in the making of this page.</p>
+            <p>Public feeds and proof bundles withhold stored wallet and serial preimages. The service still stores submitted fields. The <code>/miner/{wallet_hash}</code> route family, <code>/lifecycle/{wallet_hash}</code>, and full <code>GET /invoice/{id}</code> JSON route require operator bearer authentication. Payment pages use UUID invoice URLs as bearer capabilities and can disclose a payment request to anyone who obtains the URL. Independent verification of encrypted Orchard memo contents is a separate disclosure problem and is not claimed here.</p>
           </article>
           <article class="tile">
             <span class="num">no</span>
             <h3>Adoption claims</h3>
-            <p>Leaf volume to date is dominated by our own demonstration and test traffic. External adopters: zero. The ask funds completed, verifiable infrastructure, not traction.</p>
+            <p>Leaf volume to date is dominated by our own demonstration and test traffic. No independently verified external production adopter is evidenced in this package as of 2026-08-13. The ask is for completed infrastructure, not a traction claim.</p>
           </article>
         </div>
       </section>
@@ -669,18 +705,18 @@ python verify_proof.py --proof proof.json</code></pre>
       <section class="band" aria-labelledby="ask-title">
         <div class="statement">
           <div class="quote">
-            <p id="ask-title">Retroactive grant ask: fund the completed public ZAP1 attestation layer because it gives Zcash builders a privacy-preserving way to prove lifecycle facts without turning those facts into surveillance exhaust.</p>
+            <p id="ask-title">Retroactive grant ask: fund the completed public ZAP1 attestation layer because it gives Zcash builders a way to commit pseudonymous lifecycle claims without putting event preimages in shielded memo payloads or public proof feeds.</p>
           </div>
           <aside class="side-note">
             <strong>Evaluator shortcut</strong>
-            Start with <code>/stats</code>, inspect <code>/anchor/history</code>, open a proof bundle from a leaf, then check it with <code>zap1-verify</code>. The hosted page is a map; the evidence is the protocol output.
+            Start with <code>/stats</code>, inspect <code>/anchor/history</code>, then recompute a proof bundle with <code>zap1-verify</code>. Treat the root-to-encrypted-memo mapping as an API-published claim until a safe disclosure artifact is available.
           </aside>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      ZAP1 is MIT licensed. Built for Zcash application attestations that preserve privacy by default.
+      ZAP1 is MIT licensed. Built to keep event preimages out of shielded memo payloads and public proof feeds.
     </footer>
   </div>
 </body>

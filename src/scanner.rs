@@ -10,7 +10,6 @@ use zcash_protocol::consensus::{BlockHeight, BranchId};
 
 use crate::config::Config;
 use crate::db::Db;
-use crate::models::InvoiceStatus;
 use crate::node::NodeBackend;
 use crate::wallet::AnchorWallet;
 
@@ -127,64 +126,58 @@ async fn scan_once(
             let decrypted =
                 decrypt_transaction(&config.network, Some(block_height), None, &tx, ufvks);
 
-            // Check Orchard outputs
+            // A transaction can contain several outputs to one invoice. Record
+            // the transaction once with the sum of all matching Orchard outputs.
+            let mut matched_payments: HashMap<usize, u64> = HashMap::new();
             for output in decrypted.orchard_outputs() {
                 let value_zat = output.note_value().into_u64();
-
-                // Get the recipient address from the note to match against invoices
                 let recipient = output.note().recipient();
 
-                // Try to match against active invoice addresses
-                // We need to compare the Orchard address from the note against
-                // our generated addresses
-                for invoice in &active_invoices {
+                for (invoice_index, invoice) in active_invoices.iter().enumerate() {
                     if let Ok(ua) =
                         crate::keys::unified_address_at(&ufvks[&0u32], invoice.diversifier_index)
                     {
                         if let Some(orchard_addr) = ua.orchard() {
                             if *orchard_addr == recipient {
-                                tracing::info!(
-                                    "Payment detected: {} zat for invoice {} (tx {})",
+                                accumulate_payment_value(
+                                    &mut matched_payments,
+                                    invoice_index,
                                     value_zat,
-                                    invoice.id,
-                                    txid_str
-                                );
-                                let transitioned_to_paid = db.record_payment(
-                                    &invoice.id,
-                                    value_zat,
-                                    txid_str,
-                                    height,
-                                    "block",
                                 )?;
-
-                                // Send Signal notification
-                                if let Ok(Some(updated)) = db.get_invoice(&invoice.id) {
-                                    if transitioned_to_paid && updated.status == InvoiceStatus::Paid
-                                    {
-                                        if let Some(wallet_hash) = updated.wallet_hash.as_deref() {
-                                            create_lifecycle_leaf_for_invoice(
-                                                db,
-                                                &updated,
-                                                wallet_hash,
-                                            );
-                                        }
-                                    }
-
-                                    let nc = config.clone();
-                                    let txid_owned = txid_str.to_string();
-                                    tokio::spawn(async move {
-                                        crate::notify::payment_received(
-                                            &nc,
-                                            &updated,
-                                            value_zat,
-                                            &txid_owned,
-                                        )
-                                        .await;
-                                    });
-                                }
                             }
                         }
                     }
+                }
+            }
+
+            for (invoice_index, value_zat) in matched_payments {
+                let invoice = &active_invoices[invoice_index];
+                tracing::info!(
+                    "Confirmed payment detected: {} zat for invoice {} (tx {})",
+                    value_zat,
+                    invoice.id,
+                    txid_str
+                );
+                let outcome =
+                    db.record_confirmed_payment(&invoice.id, value_zat, txid_str, height)?;
+
+                if outcome.lifecycle_leaf_created {
+                    tracing::info!(
+                        "Confirmed payment lifecycle leaf committed: invoice={} leaf={}",
+                        invoice.id,
+                        outcome.lifecycle_leaf_hash.as_deref().unwrap_or("unknown")
+                    );
+                }
+                if outcome.newly_recorded {
+                    let updated = db
+                        .get_invoice(&invoice.id)?
+                        .ok_or_else(|| anyhow::anyhow!("paid invoice disappeared"))?;
+                    let nc = config.clone();
+                    let txid_owned = txid_str.to_string();
+                    tokio::spawn(async move {
+                        crate::notify::payment_received(&nc, &updated, value_zat, &txid_owned)
+                            .await;
+                    });
                 }
             }
 
@@ -396,40 +389,7 @@ async fn scan_mempool(
                                 invoice.id,
                                 txid_str
                             );
-                            // Record as payment (will be confirmed when block is mined)
-                            let transitioned = db.record_payment(
-                                &invoice.id,
-                                value_zat,
-                                txid_str,
-                                chain_height,
-                                "mempool",
-                            )?;
-
-                            if let Ok(Some(updated)) = db.get_invoice(&invoice.id) {
-                                if transitioned
-                                    && updated.status == crate::models::InvoiceStatus::Paid
-                                {
-                                    if let Some(wallet_hash) = updated.wallet_hash.as_deref() {
-                                        create_lifecycle_leaf_for_invoice(
-                                            db,
-                                            &updated,
-                                            wallet_hash,
-                                        );
-                                    }
-                                }
-
-                                let nc = config.clone();
-                                let txid_owned = txid_str.to_string();
-                                tokio::spawn(async move {
-                                    crate::notify::payment_received(
-                                        &nc,
-                                        &updated,
-                                        value_zat,
-                                        &txid_owned,
-                                    )
-                                    .await;
-                                });
-                            }
+                            db.observe_mempool_payment(&invoice.id, value_zat, txid_str)?;
                         }
                     }
                 }
@@ -440,106 +400,280 @@ async fn scan_mempool(
     Ok(())
 }
 
-/// Create the appropriate lifecycle Merkle leaf when an invoice is paid.
-/// Maps invoice_type to the correct event type:
-///   "program" | "initial" -> PROGRAM_ENTRY
-///   "hosting"             -> HOSTING_PAYMENT (needs serial from miner_assignments)
-///   "renewal"             -> SHIELD_RENEWAL
-fn create_lifecycle_leaf_for_invoice(db: &Db, invoice: &crate::models::Invoice, wallet_hash: &str) {
-    let result = match invoice.invoice_type.as_str() {
-        "program" | "initial" => db
-            .insert_program_entry_leaf(wallet_hash)
-            .map(|(leaf, root)| {
-                tracing::info!(
-                    "PROGRAM_ENTRY committed: leaf={} root={}",
-                    leaf.leaf_hash,
-                    root.root_hash
-                );
-            }),
-        "hosting" => {
-            // Parse month/year from memo (format: "NS-hosting-YYYY-MM-...")
-            // or fall back to current date
-            let (month, year) = parse_hosting_period(invoice.memo.as_deref());
-            // Need a serial  - look up from miner_assignments
-            match db.get_miner_by_wallet_hash(wallet_hash) {
-                Ok(Some((_addr, serial, _fid))) => db
-                    .insert_hosting_payment_leaf(wallet_hash, &serial, month, year)
-                    .map(|(leaf, root)| {
-                        tracing::info!(
-                            "HOSTING_PAYMENT committed: leaf={} root={} serial={} period={}-{}",
-                            leaf.leaf_hash,
-                            root.root_hash,
-                            serial,
-                            year,
-                            month
-                        );
-                    }),
-                _ => {
-                    tracing::warn!(
-                        "Hosting payment for {} but no miner assignment found  - skipping leaf",
-                        wallet_hash
-                    );
-                    Ok(())
-                }
-            }
-        }
-        "renewal" => {
-            let year = parse_renewal_year(invoice.memo.as_deref());
-            db.insert_shield_renewal_leaf(wallet_hash, year)
-                .map(|(leaf, root)| {
-                    tracing::info!(
-                        "SHIELD_RENEWAL committed: leaf={} root={} year={}",
-                        leaf.leaf_hash,
-                        root.root_hash,
-                        year
-                    );
-                })
-        }
-        _ => Ok(()),
-    };
+fn accumulate_payment_value(
+    matched_payments: &mut HashMap<usize, u64>,
+    invoice_index: usize,
+    value_zat: u64,
+) -> Result<()> {
+    let total = matched_payments.entry(invoice_index).or_default();
+    *total = total
+        .checked_add(value_zat)
+        .ok_or_else(|| anyhow::anyhow!("payment value overflow"))?;
+    Ok(())
+}
 
-    if let Err(e) = result {
-        tracing::warn!(
-            "Failed to create lifecycle leaf for invoice {}: {}",
-            invoice.id,
-            e
+#[cfg(test)]
+mod tests {
+    use super::accumulate_payment_value;
+    use crate::db::Db;
+    use crate::models::{Invoice, InvoiceStatus};
+    use std::collections::HashMap;
+
+    fn invoice(
+        id: &str,
+        invoice_type: &str,
+        wallet_hash: Option<&str>,
+        amount_zat: u64,
+    ) -> Invoice {
+        Invoice {
+            id: id.to_string(),
+            diversifier_index: 1,
+            address: "u1test".to_string(),
+            amount_zat,
+            memo: None,
+            invoice_type: invoice_type.to_string(),
+            wallet_hash: wallet_hash.map(str::to_string),
+            status: InvoiceStatus::Pending,
+            received_zat: 0,
+            created_at: "2026-08-13T00:00:00Z".to_string(),
+            expires_at: None,
+            paid_at: None,
+            paid_txid: None,
+            paid_height: None,
+        }
+    }
+
+    #[test]
+    fn mempool_only_then_eviction_leaves_invoice_pending_without_evidence() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-mempool",
+            "program",
+            Some("wallet-mempool"),
+            50_000,
+        ))
+        .unwrap();
+
+        db.observe_mempool_payment("invoice-mempool", 50_000, "mempool-tx")
+            .unwrap();
+
+        let stored = db.get_invoice("invoice-mempool").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Pending);
+        assert_eq!(stored.received_zat, 0);
+        assert_eq!(
+            db.payment_state_counts("invoice-mempool").unwrap(),
+            (0, 0, 0)
         );
     }
-}
 
-/// Parse hosting period from memo like "NS-hosting-2026-07-..." -> (7, 2026)
-fn parse_hosting_period(memo: Option<&str>) -> (u32, u32) {
-    if let Some(memo) = memo {
-        let parts: Vec<&str> = memo.split('-').collect();
-        // Expected: ["NS", "hosting", "2026", "07", ...]
-        if parts.len() >= 4 {
-            if let (Ok(year), Ok(month)) = (parts[2].parse::<u32>(), parts[3].parse::<u32>()) {
-                return (month, year);
-            }
-        }
+    #[test]
+    fn several_outputs_in_one_transaction_are_recorded_as_one_payment() {
+        let mut matches = HashMap::new();
+        accumulate_payment_value(&mut matches, 4, 20_000).unwrap();
+        accumulate_payment_value(&mut matches, 4, 30_000).unwrap();
+        assert_eq!(matches, HashMap::from([(4, 50_000)]));
     }
-    let now = chrono::Utc::now();
-    (
-        now.format("%m").to_string().parse().unwrap_or(1),
-        now.format("%Y").to_string().parse().unwrap_or(2026),
-    )
-}
 
-/// Parse renewal year from memo like "NS-renewal-2027-..." -> 2027
-fn parse_renewal_year(memo: Option<&str>) -> u32 {
-    if let Some(memo) = memo {
-        let parts: Vec<&str> = memo.split('-').collect();
-        if parts.len() >= 3 {
-            if let Ok(year) = parts[2].parse::<u32>() {
-                return year;
-            }
-        }
+    #[test]
+    fn failed_lifecycle_materialization_rolls_back_and_retry_converges_once() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-hosting",
+            "hosting",
+            Some("wallet-hosting"),
+            75_000,
+        ))
+        .unwrap();
+
+        let first = db.record_confirmed_payment(
+            "invoice-hosting",
+            75_000,
+            "confirmed-hosting-tx",
+            3_400_001,
+        );
+        assert!(first.is_err());
+        let stored = db.get_invoice("invoice-hosting").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Pending);
+        assert_eq!(stored.received_zat, 0);
+        assert_eq!(
+            db.payment_state_counts("invoice-hosting").unwrap(),
+            (0, 0, 0)
+        );
+
+        db.assign_miner("wallet-hosting", "u1hosting", "serial-hosting", None)
+            .unwrap();
+        let retried = db
+            .record_confirmed_payment("invoice-hosting", 75_000, "confirmed-hosting-tx", 3_400_001)
+            .unwrap();
+        assert!(retried.newly_recorded);
+        assert!(retried.transitioned_to_paid);
+        assert!(retried.lifecycle_leaf_created);
+
+        let replayed = db
+            .record_confirmed_payment("invoice-hosting", 75_000, "confirmed-hosting-tx", 3_400_001)
+            .unwrap();
+        assert!(!replayed.newly_recorded);
+        assert!(!replayed.transitioned_to_paid);
+        assert!(!replayed.lifecycle_leaf_created);
+        assert_eq!(
+            db.payment_state_counts("invoice-hosting").unwrap(),
+            (1, 1, 1)
+        );
     }
-    chrono::Utc::now()
-        .format("%Y")
-        .to_string()
-        .parse()
-        .unwrap_or(2026)
+
+    #[test]
+    fn confirmed_partial_payments_sum_before_one_paid_transition() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-partial",
+            "program",
+            Some("wallet-partial"),
+            100_000,
+        ))
+        .unwrap();
+
+        let partial = db
+            .record_confirmed_payment("invoice-partial", 60_000, "confirmed-partial-a", 3_400_010)
+            .unwrap();
+        assert!(partial.newly_recorded);
+        assert!(!partial.transitioned_to_paid);
+        assert!(partial.lifecycle_leaf_hash.is_none());
+        let stored = db.get_invoice("invoice-partial").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Partial);
+        assert_eq!(stored.received_zat, 60_000);
+
+        let paid = db
+            .record_confirmed_payment("invoice-partial", 40_000, "confirmed-partial-b", 3_400_011)
+            .unwrap();
+        assert!(paid.newly_recorded);
+        assert!(paid.transitioned_to_paid);
+        assert!(paid.lifecycle_leaf_created);
+        let stored = db.get_invoice("invoice-partial").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Paid);
+        assert_eq!(stored.received_zat, 100_000);
+        assert_eq!(
+            db.payment_state_counts("invoice-partial").unwrap(),
+            (2, 1, 1)
+        );
+    }
+
+    #[test]
+    fn confirmed_payment_commits_one_transition_and_one_leaf() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-program",
+            "program",
+            Some("wallet-program"),
+            100_000,
+        ))
+        .unwrap();
+
+        let confirmed = db
+            .record_confirmed_payment(
+                "invoice-program",
+                100_000,
+                "confirmed-program-tx",
+                3_400_002,
+            )
+            .unwrap();
+        assert!(confirmed.newly_recorded);
+        assert!(confirmed.transitioned_to_paid);
+        assert!(confirmed.lifecycle_leaf_created);
+
+        let stored = db.get_invoice("invoice-program").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Paid);
+        assert_eq!(stored.received_zat, 100_000);
+        assert_eq!(stored.paid_txid.as_deref(), Some("confirmed-program-tx"));
+        assert_eq!(stored.paid_height, Some(3_400_002));
+        assert_eq!(
+            db.payment_state_counts("invoice-program").unwrap(),
+            (1, 1, 1)
+        );
+
+        let overpayment = db
+            .record_confirmed_payment(
+                "invoice-program",
+                20_000,
+                "confirmed-overpayment-tx",
+                3_400_003,
+            )
+            .unwrap();
+        assert!(overpayment.newly_recorded);
+        assert!(!overpayment.transitioned_to_paid);
+        assert!(!overpayment.lifecycle_leaf_created);
+        let stored = db.get_invoice("invoice-program").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Paid);
+        assert_eq!(stored.received_zat, 120_000);
+        assert_eq!(stored.paid_txid.as_deref(), Some("confirmed-program-tx"));
+        assert_eq!(
+            db.payment_state_counts("invoice-program").unwrap(),
+            (2, 1, 1)
+        );
+    }
+
+    #[test]
+    fn legacy_mempool_row_promotes_atomically_on_confirmation() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-legacy",
+            "program",
+            Some("wallet-legacy"),
+            25_000,
+        ))
+        .unwrap();
+        db.insert_legacy_mempool_payment_for_test("invoice-legacy", 25_000, "legacy-mempool-tx")
+            .unwrap();
+
+        let promoted = db
+            .record_confirmed_payment("invoice-legacy", 25_000, "legacy-mempool-tx", 3_400_003)
+            .unwrap();
+        assert!(!promoted.newly_recorded);
+        assert!(promoted.transitioned_to_paid);
+        assert!(promoted.lifecycle_leaf_created);
+
+        let stored = db.get_invoice("invoice-legacy").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Paid);
+        assert_eq!(stored.received_zat, 25_000);
+        assert_eq!(stored.paid_height, Some(3_400_003));
+        assert_eq!(
+            db.payment_state_counts("invoice-legacy").unwrap(),
+            (1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn stranded_block_row_reconciles_on_retry() {
+        let db = Db::open(":memory:").unwrap();
+        db.create_invoice(&invoice(
+            "invoice-stranded",
+            "program",
+            Some("wallet-stranded"),
+            30_000,
+        ))
+        .unwrap();
+        db.insert_legacy_block_payment_for_test(
+            "invoice-stranded",
+            30_000,
+            "stranded-block-tx",
+            3_400_004,
+        )
+        .unwrap();
+
+        let repaired = db
+            .record_confirmed_payment("invoice-stranded", 30_000, "stranded-block-tx", 3_400_004)
+            .unwrap();
+        assert!(!repaired.newly_recorded);
+        assert!(repaired.transitioned_to_paid);
+        assert!(repaired.lifecycle_leaf_created);
+
+        let stored = db.get_invoice("invoice-stranded").unwrap().unwrap();
+        assert_eq!(stored.status, InvoiceStatus::Paid);
+        assert_eq!(stored.received_zat, 30_000);
+        assert_eq!(
+            db.payment_state_counts("invoice-stranded").unwrap(),
+            (1, 1, 1)
+        );
+    }
 }
 
 // Anchor automation is now in anchor.rs (spawned from main.rs)

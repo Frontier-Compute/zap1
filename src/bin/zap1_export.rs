@@ -27,7 +27,7 @@ struct AuditPackage {
 struct ProofEntry {
     leaf_hash: String,
     event_type: String,
-    wallet_hash: String,
+    wallet_hash: Option<String>,
     serial_number: Option<String>,
     created_at: String,
     proof_steps: Vec<serde_json::Value>,
@@ -59,8 +59,6 @@ struct ApiProofBundle {
 struct ApiLeaf {
     hash: String,
     event_type: String,
-    wallet_hash: String,
-    serial_number: Option<String>,
     created_at: String,
 }
 
@@ -100,6 +98,7 @@ struct LifecycleEvent {
 
 struct Cli {
     api_url: String,
+    api_key: Option<String>,
     wallet_hash: Option<String>,
     serial: Option<String>,
     event_types: Vec<String>,
@@ -197,8 +196,8 @@ async fn main() -> Result<()> {
         proofs.push(ProofEntry {
             leaf_hash: bundle.leaf.hash,
             event_type: bundle.leaf.event_type,
-            wallet_hash: bundle.leaf.wallet_hash,
-            serial_number: bundle.leaf.serial_number,
+            wallet_hash: cli.wallet_hash.clone(),
+            serial_number: lifecycle_event.and_then(|event| event.serial_number.clone()),
             created_at: bundle.leaf.created_at,
             proof_steps: bundle
                 .proof
@@ -239,7 +238,7 @@ async fn main() -> Result<()> {
             procedure: vec![
                 "for each proof entry, verify the Merkle proof from leaf_hash to root",
                 "use BLAKE2b-256 with NordicShield_MRK personalization for tree nodes",
-                "confirm the root matches the anchor_txid on Zcash mainnet",
+                "treat the txid and height as a transaction reference only unless a separate safe opening binds the encrypted memo to the root",
                 "confirm the anchor_txid is mined at anchor_height",
                 "optionally use zap1_schema --emit-witness to verify preimage fields",
             ],
@@ -264,11 +263,17 @@ async fn collect_leaf_hashes(
 ) -> Result<(Vec<String>, Vec<LifecycleEvent>)> {
     if let Some(wh) = &cli.wallet_hash {
         let url = format!("{}/lifecycle/{}", cli.api_url, wh);
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .context("failed to fetch lifecycle")?;
+        let mut request = client.get(&url);
+        if let Some(api_key) = cli.api_key.as_deref() {
+            request = request.bearer_auth(api_key);
+        }
+        let resp = request.send().await.context("failed to fetch lifecycle")?;
+        if !resp.status().is_success() {
+            return Err(anyhow!(
+                "lifecycle request failed with HTTP {}; set ZAP1_ADMIN_API_KEY for the authenticated disclosure route",
+                resp.status()
+            ));
+        }
         let body: LifecycleResponse = resp.json().await.context("invalid lifecycle JSON")?;
 
         let filtered: Vec<LifecycleEvent> = body
@@ -287,6 +292,7 @@ async fn collect_leaf_hashes(
 fn parse_args() -> Result<Cli> {
     let mut args = std::env::args().skip(1);
     let mut api_url = String::from("http://127.0.0.1:3080");
+    let api_key = std::env::var("ZAP1_ADMIN_API_KEY").ok();
     let mut wallet_hash = None;
     let mut serial = None;
     let mut event_types = Vec::new();
@@ -340,6 +346,7 @@ fn parse_args() -> Result<Cli> {
 
     Ok(Cli {
         api_url,
+        api_key,
         wallet_hash,
         serial,
         event_types,
@@ -357,5 +364,6 @@ fn print_usage() {
     eprintln!();
     eprintln!("Profiles: auditor, counterparty, member, regulator");
     eprintln!("Each profile selects a predefined set of event types to disclose.");
+    eprintln!("Set ZAP1_ADMIN_API_KEY for the authenticated lifecycle route.");
     eprintln!("Verify offline: zap1_audit --export package.json");
 }

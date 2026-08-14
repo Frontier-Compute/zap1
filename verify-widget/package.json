@@ -1,9 +1,12 @@
 {
   "name": "@frontier-compute/verify-widget",
   "version": "1.0.0",
-  "description": "Zero-trust in-browser Merkle proof verifier for the ZAP1 attestation protocol on Zcash",
+  "description": "Client-side ZAP1 Merkle-bundle consistency checker",
   "type": "module",
   "main": "blake2b.js",
+  "scripts": {
+    "test": "node verifier.test.mjs"
+  },
   "exports": {
     ".": "./blake2b.js",
     "./blake2b": "./blake2b.js",
@@ -12,7 +15,8 @@
   "files": [
     "blake2b.js",
     "ProofVerifier.jsx",
-    "verify-standalone.html"
+    "verify-standalone.html",
+    "verifier.test.mjs"
   ],
   "keywords": [
     "zcash",
@@ -22,7 +26,7 @@
     "verification",
     "attestation",
     "zap1",
-    "zero-trust"
+    "client-side"
   ],
   "author": "zk_nd3r <zk_nd3r@frontiercompute.io>",
   "license": "MIT",

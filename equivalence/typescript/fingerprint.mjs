@@ -139,8 +139,8 @@ function blake2b256(input, personalization) {
 }
 
 function hexToBytes(hex, label) {
-  if (typeof hex !== "string" || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
-    throw new Error(`${label} must be even-length hex`);
+  if (typeof hex !== "string" || !/^[0-9a-f]{64}$/.test(hex)) {
+    throw new Error(`${label} must be exactly 32-byte lowercase hex`);
   }
   return Uint8Array.from(Buffer.from(hex, "hex"));
 }
@@ -168,6 +168,7 @@ function commitRoot(leafCount, rawRoot) {
   const count = BigInt(leafCount);
   if (count <= 0n) throw new Error("leaf_count must be positive");
   if (count > 0xffffffffffffffffn) throw new Error("leaf_count exceeds u64");
+  if (rawRoot.length !== 32) throw new Error("raw Merkle root must be 32 bytes");
   const input = new Uint8Array(41);
   input[0] = 1;
   let tmp = count;
@@ -180,6 +181,7 @@ function commitRoot(leafCount, rawRoot) {
 }
 
 function walkRaw(leaf, proof) {
+  if (leaf.length !== 32) throw new Error("leaf hash must be 32 bytes");
   let current = leaf;
   for (const step of proof) {
     const sibling = hexToBytes(step.hash, "proof step hash");
@@ -197,7 +199,10 @@ function walkRaw(leaf, proof) {
 
 function legacyAllowed(scheme, anchorHeight, allowHistoricalLegacy) {
   return (
-    (allowHistoricalLegacy || scheme === LEGACY_SCHEME) &&
+    (scheme === LEGACY_SCHEME ||
+      ((scheme === null || scheme === undefined) && allowHistoricalLegacy)) &&
+    Number.isInteger(anchorHeight) &&
+    anchorHeight >= 0 &&
     anchorHeight !== null &&
     anchorHeight !== undefined &&
     Number(anchorHeight) <= LEGACY_ROOT_MAX_ANCHOR_HEIGHT
@@ -212,11 +217,17 @@ function verifyCase(caseData) {
 
   const rawRoot = walkRaw(leaf, caseData.proof);
   const countBoundRoot = commitRoot(caseData.leaf_count, rawRoot);
+  const countBoundAdmitted =
+    caseData.scheme === null ||
+    caseData.scheme === undefined ||
+    caseData.scheme === COUNT_BOUND_SCHEME;
+  const schemeAdmitted = countBoundAdmitted || caseData.scheme === LEGACY_SCHEME;
 
-  if (equalBytes(countBoundRoot, expected)) {
+  if (countBoundAdmitted && equalBytes(countBoundRoot, expected)) {
     return { valid: true, resultScheme: COUNT_BOUND_SCHEME, countBoundRoot, rawRoot };
   }
   if (
+    schemeAdmitted &&
     equalBytes(rawRoot, expected) &&
     legacyAllowed(caseData.scheme, caseData.anchor_height, Boolean(caseData.allow_historical_legacy))
   ) {
@@ -252,7 +263,13 @@ function encodeCase(caseData, result) {
   ];
 
   for (const step of caseData.proof) {
-    chunks.push(Buffer.from([step.position === "right" ? 1 : 0]));
+    if (step.position === "right") {
+      chunks.push(Buffer.from([1]));
+    } else if (step.position === "left") {
+      chunks.push(Buffer.from([0]));
+    } else {
+      throw new Error("proof position must be exactly 'left' or 'right'");
+    }
     chunks.push(Buffer.from(hexToBytes(step.hash, "proof step hash")));
   }
 

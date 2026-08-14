@@ -16,17 +16,37 @@ class ZAP1Client {
     this.key = apiKey || '';
   }
 
-  async _get(path) {
-    const res = await fetch(`${this.url}${path}`);
+  _authHeaders() {
+    if (!this.key) throw new Error('API key required for authenticated route');
+    return { 'Authorization': `Bearer ${this.key}` };
+  }
+
+  async _get(path, authenticated = false) {
+    const headers = { 'Accept': 'application/json' };
+    if (authenticated) Object.assign(headers, this._authHeaders());
+    const res = await fetch(`${this.url}${path}`, { headers });
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
     return res.json();
   }
 
-  async _post(path, body) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (this.key) headers['Authorization'] = `Bearer ${this.key}`;
+  async _postJson(path, body) {
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      ...this._authHeaders()
+    };
     const res = await fetch(`${this.url}${path}`, {
       method: 'POST', headers, body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  async _postText(path, body) {
+    const res = await fetch(`${this.url}${path}`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'text/plain' },
+      body
     });
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
     return res.json();
@@ -38,24 +58,26 @@ class ZAP1Client {
   async protocolInfo() { return this._get('/protocol/info'); }
   async anchorStatus() { return this._get('/anchor/status'); }
   async anchorHistory() { return this._get('/anchor/history'); }
-  async events(limit = 50) { return this._get(`/events?limit=${limit}`); }
+  async events(limit = 50) { return this._get(`/events?limit=${encodeURIComponent(limit)}`); }
   async buildInfo() { return this._get('/build/info'); }
 
   // Verification
-  async verifyLeaf(leafHash) { return this._get(`/verify/${leafHash}/check`); }
-  async proofBundle(leafHash) { return this._get(`/verify/${leafHash}/proof.json`); }
-  async lifecycle(walletHash) { return this._get(`/lifecycle/${walletHash}`); }
+  async verifyLeaf(leafHash) { return this._get(`/verify/${encodeURIComponent(leafHash)}/check`); }
+  async proofBundle(leafHash) { return this._get(`/verify/${encodeURIComponent(leafHash)}/proof.json`); }
+  async lifecycle(walletHash) {
+    return this._get(`/lifecycle/${encodeURIComponent(walletHash)}`, true);
+  }
 
   // Memo decode
-  async decodeMemo(hex) { return this._post('/memo/decode', hex); }
+  async decodeMemo(hex) { return this._postText('/memo/decode', hex); }
 
   // Write endpoints (require API key)
   async createEvent(eventType, params) {
-    return this._post('/event', { event_type: eventType, ...params });
+    return this._postJson('/event', { event_type: eventType, ...params });
   }
 
   async createInvoice(amountZec, memo) {
-    return this._post('/invoice', { amount_zec: amountZec, memo });
+    return this._postJson('/invoice', { amount_zec: amountZec, memo });
   }
 }
 
@@ -70,7 +92,7 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].include
     const history = await client.anchorHistory();
 
     console.log(`${info.protocol} ${info.version}`);
-    console.log(`${stats.total_anchors} anchors, ${stats.total_leaves} leaves, ${info.deployed_types} types`);
+    console.log(`${stats.total_anchors} API-recorded transaction references, ${stats.total_leaves} leaves, ${info.defined_types} defined types`);
     console.log(`Last anchor: block ${history.anchors.slice(-1)[0]?.height || 'none'}`);
   })().catch(e => console.error(e.message));
 }

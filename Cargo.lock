@@ -3555,6 +3555,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum 0.8.8",
+ "base64",
  "blake2b_simd",
  "bls12_381",
  "chrono",
@@ -3599,16 +3600,14 @@ dependencies = [
 
 [[package]]
 name = "zap1-verify"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "blake2b_simd",
 ]
 
 [[package]]
 name = "zcash-memo-decode"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ee1cb67a815a96e2f9b2fc3f2c04b015915776eaa758ab92deeeed4369e0e86"
+version = "0.1.2"
 
 [[package]]
 name = "zcash_address"

@@ -2,50 +2,68 @@
 
 [![ci](https://github.com/Frontier-Compute/zap1/actions/workflows/ci.yml/badge.svg)](https://github.com/Frontier-Compute/zap1/actions/workflows/ci.yml)
 
-Open-source attestation protocol for Zcash. Commits typed lifecycle events to a BLAKE2b Merkle tree and anchors roots on-chain via shielded memos. Any Zcash-native operator can use it.
+Open-source attestation protocol for Zcash. Commits typed lifecycle events to a
+BLAKE2b Merkle tree and records Zcash transaction references for roots sent in
+shielded memos. Public root-to-memo binding requires separate disclosure
+material because Orchard memo contents are encrypted.
 
 MIT licensed. Live deployment state changes over time; verify current counts,
 scanner state, and anchor posture through the public API:
 https://api.frontiercompute.cash/stats
 
-[ZIP draft PR #1243](https://github.com/zcash/zips/pull/1243) | [QUICKSTART](QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
+[Research wire-format draft PR #1243](https://github.com/zcash/zips/pull/1243) | [QUICKSTART](QUICKSTART.md) | [crates.io](https://crates.io/crates/zap1-verify) | [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode)
 
 ## Verify in one command
 
+`bash`, Python 3, Node, Rust, and `protoc` are required.
+
 ```bash
-git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash scripts/check.sh
+git clone https://github.com/Frontier-Compute/zap1.git && cd zap1 && bash scripts/check.sh --local
 ```
 
-## Verify a live receipt
+That command is the Linux/macOS path. Windows needs Git Bash and an x64 Visual
+Studio developer environment; see [EVALUATOR_QUICKSTART.md](EVALUATOR_QUICKSTART.md).
 
-Pull a real proof bundle from the live tree and re-walk it locally. No server
-trust, no API key:
+## Check a proof bundle
+
+Pull a proof bundle from the live API and re-walk it locally. No API key is
+needed. The API supplies the leaf, path, and root; the local check does not
+authenticate root publication.
 
 ```bash
 curl -s https://api.frontiercompute.cash/verify/41792a315c4942da8901d1fd9c12e2598c47ec0e40f3086e2c883ee9c70ead17/proof.json -o proof.json
-python verify_proof.py --proof proof.json
-# VERIFIED. Count-bound proof is valid. Leaf is included in the published root.
+python3 examples/verify_proof.py proof.json
+# MERKLE MATCH: supplied leaf hash is included under the supplied root.
 ```
 
-The bundle is regenerated against the current published root on every fetch,
-so this command keeps working as the tree grows. The proof shows the receipt
-was committed and never changed; whether the underlying claim is true is
-outside the proof's scope.
+The endpoint selects a covering root and reports its scheme and anchor fields;
+inspect them on every fetch. The local verifier checks only that the downloaded
+leaf and proof path are internally consistent with the supplied root. Check
+`/anchor/status` for current publication state. This does not prove the
+server's root-to-transaction mapping or the underlying event claim.
 
 ## What it does
 
-- **Structured attestation**: typed lifecycle events (entry, ownership, deployment, payment, transfer, exit) and agent events (register, policy, action) committed to a BLAKE2b Merkle tree with configurable domain separation
+- **Structured claims**: operator-supplied lifecycle events (entry, ownership, deployment, payment, transfer, exit) and agent events (register, policy, action) committed to a BLAKE2b Merkle tree with configurable domain separation. A commitment does not prove the claim is true.
 - **Shielded anchoring**: Merkle roots can be broadcast to Zcash mainnet via
-  Orchard shielded memos. Proofs are publicly verifiable, event data stays
-  private. Current anchor freshness is reported by `/anchor/status`.
-- **Verification**: standalone SDK on [crates.io](https://crates.io/crates/zap1-verify), browser verifier, offline audit tools. No server trust required.
-- **Ecosystem tooling**: universal [memo decoder](https://crates.io/crates/zcash-memo-decode), [ZIP 302 TVLV reference](src/bin/zip302_tvlv.rs), Zaino compact block [adapter](src/bin/zaino_adapter.rs), [selective disclosure export](src/bin/zap1_export.rs)
+  Orchard shielded memos. Public feeds and proof bundles withhold stored wallet
+  and serial preimages. The service still stores submitted strings, and
+  authenticated participant and lifecycle routes disclose records to the
+  operator. Transaction IDs establish existence; encrypted memo-to-root
+  binding requires disclosure material. Current anchor freshness is reported
+  by `/anchor/status`.
+- **Verification**: the published `zap1-verify` 0.2.1 crate is the legacy verifier. The repository contains the unpublished count-bound 0.3.0 candidate, local browser tooling, and audit scripts. They recompute Merkle inclusion against a supplied root. They do not authenticate root publication or event truth.
+- **Ecosystem tooling**: the published `zcash-memo-decode` 0.1.1 crate is legacy. The repository contains the unpublished 0.1.2 candidate, plus the [ZIP 302 TVLV reference](src/bin/zip302_tvlv.rs), Zaino compact block [adapter](src/bin/zaino_adapter.rs), and [selective disclosure export](src/bin/zap1_export.rs).
 
-One production deployment is live on mainnet. The protocol is application-agnostic.
+An older service deployment is reachable and reports Mainnet. It is not
+evidence that the hardened repository candidate is deployed. Exact source,
+build, image, health, and anchor posture must pass the live gate separately.
+The protocol is application-agnostic.
 
 ## Protocol
 
-ZAP1 defines 18 event types: 15 deployed and 3 reserved for Crosslink:
+ZAP1 defines 18 event types. The write API accepts 15; PROGRAM_ENTRY,
+OWNERSHIP_ATTEST, and MERKLE_ROOT are system-managed.
 
 | Type | Name | Trigger |
 |------|------|---------|
@@ -57,27 +75,27 @@ ZAP1 defines 18 event types: 15 deployed and 3 reserved for Crosslink:
 | `0x06` | `SHIELD_RENEWAL` | Annual privacy shield renewal paid |
 | `0x07` | `TRANSFER` | Ownership transferred to a new wallet hash |
 | `0x08` | `EXIT` | Participant exit or hardware release recorded |
-| `0x09` | `MERKLE_ROOT` | Current Merkle root anchored to Zcash |
-| `0x0A` | `STAKING_DEPOSIT` | Validator stake locked (reserved, not yet tracked) |
-| `0x0B` | `STAKING_WITHDRAW` | Validator stake unlocked (reserved) |
-| `0x0C` | `STAKING_REWARD` | Block reward recorded (reserved) |
-| `0x0D` | `GOVERNANCE_PROPOSAL` | Governance proposal submitted |
-| `0x0E` | `GOVERNANCE_VOTE` | Vote commitment recorded |
-| `0x0F` | `GOVERNANCE_RESULT` | Tally result anchored |
+| `0x09` | `MERKLE_ROOT` | Current Merkle root commitment payload |
+| `0x0A` | `STAKING_DEPOSIT` | Experimental/legacy staking deposit record |
+| `0x0B` | `STAKING_WITHDRAW` | Experimental/legacy staking withdrawal record |
+| `0x0C` | `STAKING_REWARD` | Experimental/legacy staking reward record |
+| `0x0D` | `GOVERNANCE_PROPOSAL` | Experimental/legacy governance proposal |
+| `0x0E` | `GOVERNANCE_VOTE` | Experimental/legacy governance vote |
+| `0x0F` | `GOVERNANCE_RESULT` | Experimental/legacy governance result |
 | `0x40` | `AGENT_REGISTER` | Agent identity, model, and policy hashes committed |
 | `0x41` | `AGENT_POLICY` | Agent policy version and rules hash committed |
 | `0x42` | `AGENT_ACTION` | Agent action with input and output hashes committed |
 
-Proof-path verification is event-type agnostic. The deployed Rust service
-implements payload hashing for all 15 active types; the three Crosslink types
-remain reserved. Three independent verifier implementations (Python, Rust,
-TypeScript) are checked against the CI-gated [equivalence corpus](equivalence/).
+The CI-gated [equivalence corpus](equivalence/) checks that Python, Rust, and
+TypeScript produce the same outputs on the admitted frozen corpus. It is not a
+claim that the implementations are byte-identical or equivalent outside that
+corpus. Typed field reconstruction coverage differs by implementation.
 
 All hashes use BLAKE2b-256 with `NordicShield_` personalization. Merkle nodes use `NordicShield_MRK`. Full spec: [ONCHAIN_PROTOCOL.md](ONCHAIN_PROTOCOL.md).
 
-## Mainnet Anchor History
+## Mainnet Transaction-Reference History
 
-The live deployment has historical Zcash mainnet anchors. Do not rely on this
+The live deployment has historical root-to-transaction records. Do not rely on this
 README for current counts, latest root, or freshness; use the API:
 
 - Anchor status: https://api.frontiercompute.cash/anchor/status
@@ -93,38 +111,56 @@ Historical proof material is documented in [E2E_PROOF_20260327.md](E2E_PROOF_202
 - **SQLite** for invoices, Merkle leaves, Merkle roots, payment records
 - **Docker** for deployment
 
-## Setup
+## Immutable image setup
 
 ```bash
-cp .env.example .env.mainnet
-# Edit .env.mainnet with your UFVK, API_KEY, etc.
-docker compose -f docker-compose.mainnet.yml build
-docker compose -f docker-compose.mainnet.yml up -d
+test -z "$(git status --porcelain)"
+REV=$(git rev-parse HEAD)
+bash scripts/build_image.sh "zap1:$REV"
+# Copy receipt_path from the output. Keep it with its .sha256 sidecar.
+export ZAP1_OPERATOR_UFVK='uview1...from-a-wallet-you-control'
+export ZAP1_ANCHOR_TO_ADDRESS='u1...from-the-same-wallet'
+export ZAP1_SCAN_FROM_HEIGHT='<wallet-birthday-height>'
+bash scripts/operator-setup.sh myoperator 3081 /absolute/path/to/build-receipt.env
+cd operators/myoperator
+./run.sh
 ```
+
+The build driver uses a clean Git archive, emits the exact image ID, source
+revision, tree, source manifest, Dockerfile hash, embedded `BUILD_INFO`, and a
+checksummed receipt. The setup script verifies all of them before generating a
+compose file pinned to the image ID and an evaluator directory containing the
+exact archived API checker and schema. The generated run script verifies those
+evaluator bytes before Compose starts, binds `/build/info` to the receipt,
+waits for RPC-backed scanner readiness within a bounded deadline, and runs the
+final strict API check from the pinned evaluator. Bit-for-bit reproducibility
+is not asserted.
 
 ## Examples
 
-Runnable scripts in `examples/`. No install needed beyond curl + python3.
+Runnable scripts in `examples/`. Requirements vary by example and are stated
+at the top of each script.
 
 ```bash
-python3 examples/verify_proof.py                # offline proof verification, no server trust
-python3 examples/verify_onchain.py              # offline Merkle check + optional Zebra memo check
+python3 examples/verify_proof.py                # local Merkle-bundle consistency check
+python3 examples/verify_onchain.py              # fail-closed Merkle + transaction-existence check
 bash examples/quickstart.sh                     # protocol tour with local proof verification
-bash examples/governance_demo.sh YOUR_API_KEY    # full governance cycle
-python3 examples/conformance_check.py URL        # validate any ZAP1 instance (19 checks)
-bash examples/validate_instance.sh URL           # instance health check (10 checks)
-bash examples/create_event.sh YOUR_API_KEY       # create an event
+ZAP1_API_BASE=http://127.0.0.1:3080 bash examples/governance_demo.sh YOUR_API_KEY  # synthetic governance claims
+python3 conformance/check_api.py URL             # strict read-only API contract check
+bash examples/validate_instance.sh URL           # strict read-only API contract check
+ZAP1_API_BASE=http://127.0.0.1:3080 bash examples/create_event.sh YOUR_API_KEY     # synthetic event claim
 python3 examples/decode_memo.py HEX              # decode any Zcash memo
-bash examples/check_anchor.sh TXID_PREFIX        # verify an anchor on-chain
+bash examples/check_anchor.sh TXID_PREFIX        # query the API's recorded anchor mapping
 node examples/memo_decode.js HEX                 # zero-dep JS memo parser
 ```
 
 ## Verification SDK
 
-The standalone Rust + WASM verifier is available at
-[`Frontier-Compute/zap1-verify`](https://github.com/Frontier-Compute/zap1-verify).
-It implements ZAP1 leaf hashing, Merkle proof walking, and browser-friendly
-verification primitives without depending on the reference implementation server.
+The public `Frontier-Compute/zap1-verify` repository and crates.io package are
+legacy 0.2.1 surfaces. This repository contains the unpublished count-bound
+0.3.0 Rust and WASM candidate. It implements ZAP1 leaf hashing, Merkle proof
+walking, and browser-friendly primitives. After a bundle is obtained, the math
+runs locally; root publication remains a separate verification layer.
 
 ## Operator tools
 
@@ -138,11 +174,11 @@ cargo run --bin zip302_tvlv -- encode examples/zip302_parts_example.json
 python3 scripts/check_anchor_liveness.py
 ```
 
-- `zap1_audit`: verify a proof bundle against the Merkle tree and print anchor facts
+- `zap1_audit`: verify supplied leaf-hash inclusion under the supplied Merkle root, then print bundle-claimed metadata and recorded anchor references
 - `zap1_schema`: validate event witness data, recompute hashes, emit witness bundles (`--emit-witness`)
 - `zap1_export`: selective disclosure - produce self-contained audit packages for counterparties
 - `zap1_ops`: operator status rollup for scanner lag, anchor freshness, queue depth
-- `zaino_adapter`: verify all anchors via Zaino gRPC compact block path
+- `zaino_adapter`: check recorded transactions through the Zaino compact-block path
 - `memo_scan`: scan block ranges via Zaino, decrypt and classify all shielded memos
 - `zip302_tvlv`: reference ZIP 302 TVLV encoder/decoder
 - `check_anchor_liveness.py`: nightly anchor freshness and consistency check
@@ -157,15 +193,15 @@ Consumer examples in `examples/`: wallet (Python), explorer (Python), indexer (b
 | Endpoint | Method | Purpose |
 |---|---|---|
 | /protocol/info | GET | protocol metadata |
-| /events?limit=N | GET | recent attestation feed |
-| /stats | GET | anchor and leaf counts |
+| /events?limit=N | GET | recent operator-issued event claims |
+| /stats | GET | recorded-transaction and leaf counts |
 | /health | GET | scanner and node status |
-| /anchor/history | GET | all anchored roots |
+| /anchor/history | GET | API-recorded root, txid, and height mappings |
 | /anchor/status | GET | current tree state |
 | /verify/{hash}/check | GET | deployment server-side verification, when exposed for that leaf |
 | /verify/{hash}/proof.json | GET | downloadable proof bundle, when exposed for that leaf |
 | /memo/decode | POST | universal memo classifier |
-| /lifecycle/{wallet_hash} | GET | events for a wallet |
+| /lifecycle/{wallet_hash} | GET | operator-authenticated events for a subject identifier |
 
 Interactive docs: [frontiercompute.cash/api.html](https://frontiercompute.cash/api.html)
 OpenAPI spec: [conformance/openapi.yaml](conformance/openapi.yaml)
@@ -180,31 +216,40 @@ Offline proof verification does not require a hosted `/verify` endpoint:
 python3 conformance/check.py        # protocol fixture checks
 python3 conformance/check_api.py     # live API schema checks
 python3 scripts/check_compatibility.py  # 6 hash vectors
-bash scripts/check.sh             # 14 end-to-end checks
+bash scripts/check.sh --local     # deterministic repository evaluator
+ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID=sha256:... bash scripts/check.sh --live
 ```
 
 See [conformance/](conformance/) for fixtures, schemas, versioning policy, and consumer contracts.
 
 ## Ecosystem
 
-- **Verification SDK (Rust + WASM):** [Frontier-Compute/zap1-verify](https://github.com/Frontier-Compute/zap1-verify) - 22 tests
+- **Verification SDK (Rust + WASM):** published legacy crate 0.2.1; repository candidate 0.3.0 is unpublished
 - **JS/TS SDK:** [Frontier-Compute/zap1-js](https://github.com/Frontier-Compute/zap1-js) - 19 tests
 - **Public API:** [api.frontiercompute.cash](https://api.frontiercompute.cash/protocol/info)
 - **Browser verifier:** [frontiercompute.cash/verify.html](https://frontiercompute.cash/verify.html)
-- **Universal memo decoder:** [zcash-memo-decode](https://crates.io/crates/zcash-memo-decode) - 23 tests, zero deps
+- **Universal memo decoder:** published legacy crate 0.1.1; repository candidate 0.1.2 is unpublished
 - **Browser memo decoder:** [frontiercompute.cash/memo.html](https://frontiercompute.cash/memo.html)
-- **Zaino gRPC:** validated on mainnet - [ZAINO_VALIDATION.md](ZAINO_VALIDATION.md)
+- **Zaino gRPC:** historical application-operated mainnet exercise, not an
+  independent validation or current deployment attestation. See
+  [ZAINO_VALIDATION.md](ZAINO_VALIDATION.md).
 
 ## FROST Threshold Signing
 
-The current FROST design package is documented in
-[FROST_THREAT_MODEL.md](FROST_THREAT_MODEL.md). A sanitized reference
-implementation of the 2-of-3 Pallas signing round is published in
+The repository includes an experimental 2-of-3 Pallas signing path and a
+sanitized signing-round reference. The current runtime loads `ANCHOR_SEED` and
+two long-term FROST shares into one process. It proves signature compatibility,
+but it does not provide independent threshold custody and is not production
+ready. Runtime use fails closed unless
+`EXPERIMENTAL_COLOCATED_FROST_ENABLED=true` is set with `SIGNING_MODE=frost`
+and `NETWORK=Testnet`. Mainnet activation is rejected.
+
+See [FROST_THREAT_MODEL.md](FROST_THREAT_MODEL.md) and
 [docs/FROST_SIGNING_PROTOCOL.rs](docs/FROST_SIGNING_PROTOCOL.rs).
 
 ## ZIP Proposal
 
-A draft ZIP for the ZAP1 attestation format is open at [zcash/zips PR #1243](https://github.com/zcash/zips/pull/1243). It defines the event type registry, hash construction rules, Merkle tree aggregation, and verification procedure. The memo container relationship to ZIP 302 (Structured Memos) is documented in the draft.
+A draft ZIP for the ZAP1 attestation format is open at [zcash/zips PR #1243](https://github.com/zcash/zips/pull/1243). It describes an event registry, hash construction, Merkle aggregation, and verification procedure. It remains draft, unmerged, and unreconciled with the repository's canonical implementation profile. No ZIP assignment, acceptance, or adoption is claimed.
 
 ## Run tests
 
@@ -217,5 +262,4 @@ cargo test --release --test memo_merkle_test
 ## License
 
 MIT
-# updated 2026-03-27T23:30:24Z
 

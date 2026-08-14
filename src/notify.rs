@@ -1,3 +1,4 @@
+use crate::api::zatoshi_amount;
 use crate::config::Config;
 use crate::models::Invoice;
 
@@ -38,18 +39,19 @@ async fn send_signal(config: &Config, message: &str) {
 /// Notify on payment received.
 pub async fn payment_received(config: &Config, invoice: &Invoice, amount_zat: u64, txid: &str) {
     let amount_zec = amount_zat as f64 / 100_000_000.0;
-    let expected_zec = invoice.amount_zat as f64 / 100_000_000.0;
+    let amount_zec_text = zatoshi_amount(amount_zat);
+    let expected_zec = zatoshi_amount(invoice.amount_zat);
 
     let memo = invoice.memo.as_deref().unwrap_or("");
 
     let msg = format!(
         "ZAP1 Payment\n\n\
-         {:.4} ZEC received (invoice: {:.4} ZEC)\n\
+         {} ZEC received (invoice: {} ZEC)\n\
          Status: {}\n\
          Memo: {}\n\
          Invoice: {}\n\
          Tx: {}",
-        amount_zec,
+        amount_zec_text,
         expected_zec,
         invoice.status.as_str(),
         memo,
@@ -64,6 +66,7 @@ pub async fn payment_received(config: &Config, invoice: &Invoice, amount_zat: u6
         let payload = serde_json::json!({
             "event": "payment_received",
             "invoice_id": invoice.id,
+            "amount_zat": amount_zat,
             "amount_zec": amount_zec,
             "status": invoice.status.as_str(),
             "memo": memo,
@@ -76,16 +79,17 @@ pub async fn payment_received(config: &Config, invoice: &Invoice, amount_zat: u6
 /// Notify on invoice created.
 pub async fn invoice_created(config: &Config, invoice: &Invoice) {
     let amount_zec = invoice.amount_zat as f64 / 100_000_000.0;
+    let amount_zec_text = zatoshi_amount(invoice.amount_zat);
 
     let memo = invoice.memo.as_deref().unwrap_or("");
 
     let msg = format!(
         "ZAP1 Invoice Created\n\n\
-         {:.4} ZEC\n\
+         {} ZEC\n\
          Memo: {}\n\
          Invoice: {}\n\
          Address: {}...{}",
-        amount_zec,
+        amount_zec_text,
         memo,
         &invoice.id[..8],
         &invoice.address[..20],
@@ -98,6 +102,7 @@ pub async fn invoice_created(config: &Config, invoice: &Invoice) {
         let payload = serde_json::json!({
             "event": "invoice_created",
             "invoice_id": invoice.id,
+            "amount_zat": invoice.amount_zat,
             "amount_zec": amount_zec,
             "address": invoice.address,
             "memo": memo,

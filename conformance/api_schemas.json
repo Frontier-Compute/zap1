@@ -3,28 +3,44 @@
   "version": "2",
   "schemas": {
     "/protocol/info": {
-      "required": ["protocol", "version", "event_types", "deployed_types", "hash_function"],
+      "type": "object",
+      "required": ["protocol", "version", "event_types", "deployed_types", "reserved_types", "defined_types", "defined_event_types", "write_api_types", "write_api_event_types", "system_managed_types", "system_managed_event_types", "hash_function"],
       "properties": {
         "protocol": { "type": "string", "const": "ZAP1" },
         "version": { "type": "string" },
         "event_types": { "type": "integer" },
+        "event_types_semantics": { "type": "string" },
         "deployed_types": { "type": "integer" },
+        "deployed_types_semantics": { "type": "string" },
         "reserved_types": { "type": "integer" },
+        "reserved_types_semantics": { "type": "string" },
+        "defined_types": { "type": "integer" },
+        "defined_event_types": { "type": "array", "items": { "type": "string" } },
+        "write_api_types": { "type": "integer" },
+        "write_api_event_types": { "type": "array", "items": { "type": "string" } },
+        "system_managed_types": { "type": "integer" },
+        "system_managed_event_types": { "type": "array", "items": { "type": "string" } },
         "hash_function": { "type": "string", "const": "BLAKE2b-256" },
         "leaf_personalization": { "type": "string" },
         "node_personalization": { "type": "string" }
       }
     },
     "/stats": {
-      "required": ["total_anchors", "total_leaves"],
+      "type": "object",
+      "required": ["total_anchors", "total_leaves", "event_types", "type_counts", "classified_leaves", "unclassified_leaves"],
       "properties": {
         "total_anchors": { "type": "integer", "minimum": 0 },
         "total_leaves": { "type": "integer", "minimum": 0 },
+        "event_types": { "type": "array", "items": { "type": "string" } },
+        "type_counts": { "type": "object" },
+        "classified_leaves": { "type": "integer", "minimum": 0 },
+        "unclassified_leaves": { "type": "integer", "minimum": 0 },
         "first_anchor_block": { "type": ["integer", "null"] },
         "last_anchor_block": { "type": ["integer", "null"] }
       }
     },
     "/health": {
+      "type": "object",
       "required": ["last_scanned_height", "chain_tip", "sync_lag", "scanner_operational", "rpc_reachable"],
       "properties": {
         "last_scanned_height": { "type": "integer" },
@@ -37,6 +53,8 @@
       }
     },
     "/events": {
+      "type": "object",
+      "additionalProperties": false,
       "required": ["protocol", "total_returned", "events"],
       "properties": {
         "protocol": { "type": "string", "const": "ZAP1" },
@@ -44,21 +62,26 @@
         "events": {
           "type": "array",
           "items": {
-            "required": ["leaf_hash", "event_type", "wallet_hash", "verify_url", "proof_url"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["leaf_hash", "event_type", "event_type_authentication", "description", "created_at", "preimage_disclosure", "verify_url", "proof_url", "badge_url"],
             "properties": {
               "leaf_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
               "event_type": { "type": "string" },
-              "wallet_hash": { "type": "string" },
-              "serial_number": { "type": ["string", "null"] },
+              "event_type_authentication": { "type": "string", "const": "unverified_server_metadata_without_disclosed_witness" },
+              "description": { "type": "string" },
               "created_at": { "type": "string" },
+              "preimage_disclosure": { "type": "string", "const": "withheld from the public event feed" },
               "verify_url": { "type": "string" },
-              "proof_url": { "type": "string" }
+              "proof_url": { "type": "string" },
+              "badge_url": { "type": "string" }
             }
           }
         }
       }
     },
     "/anchor/history": {
+      "type": "object",
       "required": ["anchors", "total"],
       "properties": {
         "anchors": {
@@ -79,6 +102,7 @@
       }
     },
     "/verify/{hash}/check": {
+      "type": "object",
       "required": ["protocol", "valid", "leaf_hash", "root"],
       "properties": {
         "protocol": { "type": "string", "const": "ZAP1" },
@@ -90,18 +114,112 @@
         "verification_sdk": { "type": "string" }
       }
     },
+    "/verify/{hash}/proof.json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "version", "leaf", "proof", "root", "anchor", "verify_command"],
+      "properties": {
+        "protocol": { "type": "string", "const": "ZAP1" },
+        "version": { "type": "string", "const": "2" },
+        "leaf": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hash", "event_type", "event_type_authentication", "created_at", "preimage_disclosure"],
+          "properties": {
+            "hash": { "type": "string", "pattern": "[0-9a-f]{64}" },
+            "event_type": { "type": "string" },
+            "event_type_authentication": { "type": "string", "const": "unverified_server_metadata_without_disclosed_witness" },
+            "created_at": { "type": "string" },
+            "preimage_disclosure": { "type": "string", "const": "withheld from the public proof bundle" }
+          }
+        },
+        "proof": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hash", "position"],
+            "properties": {
+              "hash": { "type": "string", "pattern": "[0-9a-f]{64}" },
+              "position": { "type": "string", "enum": ["left", "right"] }
+            }
+          }
+        },
+        "root": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hash", "leaf_count", "created_at", "scheme", "legacy_allowed", "legacy_max_anchor_height"],
+          "properties": {
+            "hash": { "type": "string", "pattern": "[0-9a-f]{64}" },
+            "leaf_count": { "type": "integer", "minimum": 1 },
+            "created_at": { "type": "string" },
+            "scheme": { "type": "string" },
+            "legacy_allowed": { "type": "boolean" },
+            "legacy_max_anchor_height": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["txid", "height"],
+          "properties": {
+            "txid": { "type": ["string", "null"] },
+            "height": { "type": ["integer", "null"] }
+          }
+        },
+        "verify_command": { "type": "string" }
+      }
+    },
     "/memo/decode": {
+      "type": "object",
       "required": ["format"],
       "properties": {
         "format": { "type": "string", "enum": ["text", "zap1", "nsm1", "zip302", "empty", "binary", "unknown"] }
       }
     },
     "/build/info": {
-      "required": ["version"],
+      "type": "object",
+      "required": ["version", "deployment", "source", "build_assurance", "supply_chain", "build_metadata"],
       "properties": {
         "version": { "type": "string" },
-        "build_metadata": { "type": "string" },
-        "librustzcash_rev": { "type": "string" }
+        "librustzcash_rev": { "type": "string", "pattern": "[0-9a-f]{40}" },
+        "deployment": {
+          "type": "object",
+          "required": ["image_id", "image_id_present", "binding"],
+          "properties": {
+            "image_id": { "type": ["string", "null"], "pattern": "sha256:[0-9a-f]{64}" },
+            "image_id_present": { "type": "boolean" },
+            "binding": { "type": "string", "const": "The deployment image ID is injected by the operator from docker image inspect and must be matched to the external build and deployment receipt. It is a deployment declaration, not remote attestation." }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": ["deployment_revision", "source_tree", "source_manifest_sha256", "source_manifest_verified", "public_evidence_revision", "public_evidence_url", "parity_scope"],
+          "properties": {
+            "deployment_revision": { "type": "string", "pattern": "[0-9a-f]{40}" },
+            "source_tree": { "type": "string", "pattern": "[0-9a-f]{40}" },
+            "source_manifest_sha256": { "type": "string", "pattern": "[0-9a-f]{64}" },
+            "source_manifest_verified": { "type": "boolean" },
+            "public_evidence_revision": { "type": "string", "pattern": "[0-9a-f]{40}" },
+            "public_evidence_url": { "type": "string" },
+            "parity_scope": { "type": "string" }
+          }
+        },
+        "build_assurance": {
+          "type": "object",
+          "required": ["metadata_available", "metadata_complete", "path_remapping", "cargo_locked", "source_manifest_verified", "bit_for_bit_reproduction", "note"],
+          "properties": {
+            "metadata_available": { "type": "boolean" },
+            "metadata_complete": { "type": "boolean" },
+            "path_remapping": { "type": "boolean" },
+            "cargo_locked": { "type": "boolean" },
+            "source_manifest_verified": { "type": "boolean" },
+            "bit_for_bit_reproduction": { "type": "string", "const": "not asserted" },
+            "note": { "type": "string" }
+          }
+        },
+        "supply_chain": { "type": "object" },
+        "build_metadata": { "type": "object" }
       }
     },
     "/admin/anchor/qr": {

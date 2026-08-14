@@ -1,5 +1,7 @@
 # Wallet Integration Roadmap
 
+Status: repository proposal; no wallet integration is merged
+
 ## Target: Zodl (formerly Zashi)
 
 Zodl is the active public home of the former Zashi code line. Josh Swihart (founder) and the ECC team that built Zashi formed Zcash Open Development Lab (ZODL) in January 2025.
@@ -55,7 +57,9 @@ object Zap1MemoFormatter {
         "09" to "MERKLE_ROOT", "0a" to "STAKING_DEPOSIT",
         "0b" to "STAKING_WITHDRAW", "0c" to "STAKING_REWARD",
         "0d" to "GOVERNANCE_PROPOSAL", "0e" to "GOVERNANCE_VOTE",
-        "0f" to "GOVERNANCE_RESULT"
+        "0f" to "GOVERNANCE_RESULT",
+        "40" to "AGENT_REGISTER", "41" to "AGENT_POLICY",
+        "42" to "AGENT_ACTION"
     )
 
     fun format(memo: String): Zap1Attestation? {
@@ -74,6 +78,11 @@ object Zap1MemoFormatter {
 }
 ```
 
+The parser may recognize the wire shape of any two-digit type byte, but only
+`0x01` through `0x0F` and `0x40` through `0x42` are defined by the
+active registry. A wallet must render every other byte as unassigned, not as a
+valid extension.
+
 ## What the User Sees
 
 | Memo content | Display |
@@ -85,6 +94,8 @@ object Zap1MemoFormatter {
 | Malformed `ZAP1:xx:...` | Raw memo text (fallback) |
 
 ## Timeline
+
+These are planning estimates, not maintainer commitments.
 
 - Android: 3-5 working days
 - iOS: 4-6 working days
@@ -100,10 +111,14 @@ object Zap1MemoFormatter {
 
 ## References
 
+The Android PR 2173 and iOS PR 1680 closed unmerged on 2026-07-29. iOS issue
+1670 remained open at the 2026-08-13 cutoff. Those receipts do not establish
+wallet adoption.
+
 - [Zodl Android transaction detail VM](https://github.com/zodl-inc/zodl-android/blob/main/ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/transactiondetail/TransactionDetailVM.kt)
 - [Zodl Android memo UI](https://github.com/zodl-inc/zodl-android/blob/main/ui-lib/src/main/java/co/electriccoin/zcash/ui/screen/transactiondetail/infoitems/TransactionDetailInfoMemo.kt)
 - [Zodl iOS transaction details store](https://github.com/zodl-inc/zodl-ios/blob/main/modules/Sources/Features/TransactionDetails/TransactionDetailsStore.swift)
 - [Zodl iOS transaction details view](https://github.com/zodl-inc/zodl-ios/blob/main/modules/Sources/Features/TransactionDetails/TransactionDetailsView.swift)
-- [zcash-memo-decode on crates.io](https://crates.io/crates/zcash-memo-decode) (0 deps, classifies ZAP1/NSM1/ZIP 302/text/binary memos)
+- [zcash-memo-decode on crates.io](https://crates.io/crates/zcash-memo-decode) (published `0.1.1`; repository candidate `0.1.2` is not published)
 - [ZIP 302 partType request](https://github.com/zcash/zips/issues/1250)
 - [ZAP1 wallet contract](conformance/contracts/wallet.md)

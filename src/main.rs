@@ -1,8 +1,11 @@
+use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use tracing_subscriber::EnvFilter;
-use zap1::{anchor, api, config, db, foreman, keys, node, scanner, wallet};
+use zap1::{
+    anchor, api, config, db, foreman, frost_signer::FrostSigner, keys, node, scanner, wallet,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,24 +47,52 @@ async fn main() -> Result<()> {
     // Create node backend (Zaino gRPC if ZAINO_GRPC_URL is set, otherwise Zebra RPC)
     let backend: Arc<dyn node::NodeBackend> = Arc::from(node::create_backend(&config));
 
-    // Initialize embedded anchor wallet if ANCHOR_SEED is set (before scanner so scanner can feed it)
-    let anchor_wallet = if let Some(ref seed) = config.anchor_seed {
-        match wallet::AnchorWallet::new(&config.network, seed) {
-            Ok(w) => {
-                let w = Arc::new(w);
-                // Don't seed tree here.  Recovery scan seeds at a recent height
-                // to avoid 14K+ block commitment divergence.
-                Some(w)
+    // Key material is loaded only during an explicitly authorized broadcast
+    // window. Merely leaving a seed in the environment must not initialize a
+    // signer or start a wallet recovery scan.
+    let anchor_wallet = if config.anchor_enabled {
+        if let Some(ref seed) = config.anchor_seed {
+            match wallet::AnchorWallet::new(&config.network, seed) {
+                Ok(mut w) => {
+                    if config.signing_mode == "frost" {
+                        let share_2 = config
+                            .frost_share_path_2
+                            .as_deref()
+                            .expect("validated FROST_SHARE_PATH_2");
+                        let share_3 = config
+                            .frost_share_path_3
+                            .as_deref()
+                            .expect("validated FROST_SHARE_PATH_3");
+                        let signer = FrostSigner::from_files(
+                            Path::new(share_2),
+                            Path::new(share_3),
+                            config.experimental_colocated_frost_enabled,
+                        )?;
+                        w.set_frost_signer(signer)?;
+                    }
+                    let w = Arc::new(w);
+                    // Don't seed tree here.  Recovery scan seeds at a recent height
+                    // to avoid 14K+ block commitment divergence.
+                    Some(w)
+                }
+                Err(e) => {
+                    tracing::warn!("Anchor wallet creation failed: {:#}", e);
+                    None
+                }
             }
-            Err(e) => {
-                tracing::warn!("Anchor wallet creation failed: {:#}", e);
-                None
-            }
+        } else {
+            None
         }
     } else {
-        tracing::info!("No ANCHOR_SEED,  embedded wallet disabled");
+        tracing::info!("Anchor broadcast disabled; embedded wallet not initialized");
         None
     };
+
+    if config.anchor_enabled && anchor_wallet.is_none() {
+        bail!(
+            "ANCHOR_BROADCAST_ENABLED is true, but no validated embedded wallet is available; automatic zingo-cli quicksend is disabled because it cannot be recovered idempotently"
+        );
+    }
 
     // Spawn wallet recovery scan (independent from main scanner)
     // The main scanner's last_scanned_height is at tip,  so it skips historical blocks.

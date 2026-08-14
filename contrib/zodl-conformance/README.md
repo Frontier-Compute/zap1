@@ -23,13 +23,13 @@ swift run-swift.swift
 
 `test-vectors.json` covers:
 - All 15 standard event types (0x01-0x0F)
-- Agent event types (0x40-0x45)
+- Agent event types (0x40-0x42)
 - Legacy NSM1 prefix
 - Null-byte padded memos (real Zcash 512-byte format)
 - Edge cases: empty,  truncated,  wrong prefix,  non-hex,  uppercase hex
-- Real mainnet memo from live attestation
+- Historical operator fixture under a root mapped by the API to a mainnet transaction reference
 
 ## Related PRs
 
-- zodl-android: github.com/zodl-inc/zodl-android/pull/2173
-- zodl-ios: github.com/zodl-inc/zodl-ios/pull/1680
+- zodl-android: github.com/zodl-inc/zodl-android/pull/2173 (closed unmerged 2026-07-29)
+- zodl-ios: github.com/zodl-inc/zodl-ios/pull/1680 (closed unmerged 2026-07-29)

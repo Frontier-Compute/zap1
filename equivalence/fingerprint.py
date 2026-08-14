@@ -32,6 +32,13 @@ sys.path.insert(0, ROOT)
 from verify_proof import verify_proof as zap1_verify  # noqa: E402
 
 DOMAIN = b"zap1-verifier-equiv-v1"
+HEX32_RE = __import__("re").compile(r"[0-9a-f]{64}\Z")
+
+
+def _hex32(value: str, label: str) -> bytes:
+    if not isinstance(value, str) or HEX32_RE.fullmatch(value) is None:
+        raise ValueError(f"{label} must be exactly 32-byte lowercase hex")
+    return bytes.fromhex(value)
 
 
 def _u32(n: int) -> bytes:
@@ -51,14 +58,23 @@ def encode_case(case, valid, result_scheme, count_bound_root, raw_root) -> bytes
     buf = bytearray()
     buf += DOMAIN
     buf += _lp(case["id"])
-    buf += bytes.fromhex(case["leaf_hash"])
-    buf += _u64(int(case["leaf_count"]))
+    buf += _hex32(case["leaf_hash"], "leaf_hash")
+    leaf_count = case["leaf_count"]
+    if isinstance(leaf_count, bool) or not isinstance(leaf_count, int) or not 1 <= leaf_count < 1 << 64:
+        raise ValueError("leaf_count must be an integer from 1 through 2^64-1")
+    buf += _u64(leaf_count)
     proof = case["proof"]
     buf += _u64(len(proof))
     for step in proof:
-        buf += b"\x01" if step["position"] == "right" else b"\x00"
-        buf += bytes.fromhex(step["hash"])
-    buf += bytes.fromhex(case["expected_root"])
+        position = step.get("position")
+        if position == "right":
+            buf += b"\x01"
+        elif position == "left":
+            buf += b"\x00"
+        else:
+            raise ValueError("proof position must be exactly 'left' or 'right'")
+        buf += _hex32(step.get("hash"), "proof step hash")
+    buf += _hex32(case["expected_root"], "expected_root")
     scheme = case.get("scheme")
     if scheme is None:
         buf += b"\x00"
@@ -79,10 +95,10 @@ def encode_case(case, valid, result_scheme, count_bound_root, raw_root) -> bytes
 
 
 def fingerprint_case(case) -> str:
-    leaf = bytes.fromhex(case["leaf_hash"])
+    leaf = _hex32(case["leaf_hash"], "leaf_hash")
     proof = case["proof"]
-    expected = bytes.fromhex(case["expected_root"])
-    leaf_count = int(case["leaf_count"])
+    expected = _hex32(case["expected_root"], "expected_root")
+    leaf_count = case["leaf_count"]
     valid, result_scheme, count_bound_root, raw_root = zap1_verify(
         leaf,
         proof,

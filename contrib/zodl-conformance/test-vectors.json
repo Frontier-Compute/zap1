@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "spec": "https://github.com/Frontier-Compute/zap1/blob/main/ONCHAIN_PROTOCOL.md",
   "pattern": "^(ZAP1|NSM1):([0-9a-fA-F]{2}):([0-9a-fA-F]{64})$",
-  "notes": "Type hex is normalized to lowercase after capture.  Agent types 0x40-0x45 are valid ZAP1 memos but wallet parsers may not have labels for them.  expected_event_name uses TYPE_0x{hex} for types not in the base 15 lookup table.",
+  "notes": "This suite checks memo parsing, not event truth or encrypted-memo provenance. Type hex is normalized to lowercase after capture. The active registry defines 0x01-0x0F and 0x40-0x42. A syntax-only wallet parser may return TYPE_0x{hex} for an unassigned byte, but must not present it as a defined ZAP1 event.",
   "vectors": [
     {
       "id": "valid_01_program_entry",
@@ -111,7 +111,7 @@
       "expected_hash": "024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a",
       "expected_short_hash": "024e36515ea3...",
       "expected_is_legacy": false,
-      "description": "Valid merkle root anchor - real mainnet anchor from block 3286631"
+      "description": "Historical operator root string mapped to a mainnet transaction reference at block 3286631; this vector does not open the encrypted memo"
     },
     {
       "id": "valid_0a_staking_deposit",
@@ -222,7 +222,7 @@
       "description": "Agent action attestation - falls through to TYPE_0x42"
     },
     {
-      "id": "valid_43_agent_payment",
+      "id": "unknown_43_unassigned_agent_payment",
       "input": "ZAP1:43:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
       "expected_parse": true,
       "expected_prefix": "ZAP1",
@@ -231,10 +231,10 @@
       "expected_hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
       "expected_short_hash": "1234567890ab...",
       "expected_is_legacy": false,
-      "description": "Agent payment - reserved type, parses but no label"
+      "description": "Wire-shaped memo with unassigned type 0x43; syntax-only parser returns an unknown label and must not call it a valid payment event"
     },
     {
-      "id": "valid_44_agent_decision",
+      "id": "unknown_44_unassigned_agent_decision",
       "input": "ZAP1:44:ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
       "expected_parse": true,
       "expected_prefix": "ZAP1",
@@ -243,10 +243,10 @@
       "expected_hash": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
       "expected_short_hash": "ffeeddccbbaa...",
       "expected_is_legacy": false,
-      "description": "Agent decision - reserved type, parses but no label"
+      "description": "Wire-shaped memo with unassigned type 0x44; syntax-only parser returns an unknown label and must not call it a valid decision event"
     },
     {
-      "id": "valid_45_agent_checkpoint",
+      "id": "unknown_45_unassigned_agent_checkpoint",
       "input": "ZAP1:45:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "expected_parse": true,
       "expected_prefix": "ZAP1",
@@ -255,7 +255,7 @@
       "expected_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "expected_short_hash": "0123456789ab...",
       "expected_is_legacy": false,
-      "description": "Agent checkpoint - reserved type, parses but no label"
+      "description": "Wire-shaped memo with unassigned type 0x45; syntax-only parser returns an unknown label and must not call it a valid checkpoint event"
     },
     {
       "id": "valid_nsm1_legacy",
@@ -315,7 +315,7 @@
       "expected_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
       "expected_short_hash": "075b00df2860...",
       "expected_is_legacy": false,
-      "description": "Real Zcash 512-byte memo field with trailing null bytes - parser strips them"
+      "description": "Historical application fixture shaped as a 512-byte memo field with trailing null bytes; parser strips them"
     },
     {
       "id": "edge_whitespace_padded",

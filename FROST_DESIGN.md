@@ -1,78 +1,91 @@
-# FROST Threshold Signing for ZAP1 Anchors
+# FROST Signing Architecture for ZAP1 Anchors
 
-## Problem
+Status: Experimental design. Not production custody.
 
-Single-key anchor broadcasting is a concentration risk. If the key is lost or compromised, anchor operations stop or become attacker-controlled. For a protocol that targets multiple independent operators, single-key control is a hard dependency on one party.
+## Current implementation
 
-## Design: 2-of-3 Threshold Signing
+The repository can build an Orchard anchor transaction and run a 2-of-3
+FROST(Pallas, BLAKE2b-512) signing round. The current runtime is deliberately
+classified as a co-located compatibility experiment:
 
-### Threat model
+- one process holds `ANCHOR_SEED`, which can derive the full spending key;
+- that same process loads two long-term FROST shares;
+- both signing rounds and aggregation happen in that process;
+- there is no remote signer policy boundary or independent approval step.
 
-- Key compromise: attacker gets one share, cannot sign alone
-- Key loss: one share destroyed, remaining two can still anchor
-- Operator unavailability: any two of three participants can anchor without the third
-- Collusion: two participants can anchor without the third's consent (this is the 2-of-3 tradeoff - document it honestly)
+The threshold math is real. The custody separation is not. Compromise of the
+process or `ANCHOR_SEED` is enough to authorize a spend without an independent
+share holder.
 
-### Key ceremony
+Runtime activation fails closed unless all of these values are explicit:
 
-- Use FROST (Flexible Round-Optimized Schnorr Threshold) per the FROST Internet-Draft (draft-irtf-cfrg-frost) and the Zcash FROST implementation in the frost-zcash crate
-- Trusted dealer generation for initial setup (simpler than DKG for 3 participants)
-- Each participant receives their share via an authenticated out-of-band channel
-- Verification: each participant can verify their share against the group public key
-- The group public key maps to a single Zcash unified address used as ANCHOR_TO_ADDRESS
+```text
+SIGNING_MODE=frost
+EXPERIMENTAL_COLOCATED_FROST_ENABLED=true
+NETWORK=Testnet
+FROST_SHARE_PATH_2=/path/to/first-share.json
+FROST_SHARE_PATH_3=/path/to/second-share.json
+```
 
-### Signing flow
+This opt-in is for an authorized non-production experiment only. The runtime
+rejects this signing mode on mainnet.
 
-1. Initiator (any participant) proposes an anchor transaction: root hash, leaf count, target address
-2. Two participants commit (FROST round 1): generate nonces, share commitments
-3. Two participants sign (FROST round 2): produce signature shares
-4. Coordinator aggregates shares into a valid Schnorr signature
-5. Transaction broadcast via existing zingo-cli or future embedded tx builder
-6. The signed transaction is indistinguishable from a single-signer Orchard transaction on-chain
+## Loader invariants
 
-### Coordinator role
+Before a share can be used, the implementation requires:
 
-- The coordinator is stateless - any participant can coordinate
-- No trust required: the coordinator sees signature shares but cannot forge signatures without a valid share
-- In practice: the host running auto_anchor.sh becomes the default coordinator, but any node with API access can initiate
+- ciphersuite exactly `FROST(Pallas, BLAKE2b-512)`;
+- threshold exactly `2` and maximum signers exactly `3`;
+- two distinct regular files, including hard-link identity checks;
+- distinct participant identifiers;
+- identical VSS commitment vectors;
+- `group_verifying_key` equal to `commitment[0]`;
+- each signing share to pass the VSS equation for its identifier;
+- each declared verifying share to match the signing share and commitment;
+- the FROST group key to match the Orchard wallet spend validating key.
 
-### Recovery
+Any mismatch stops startup. There is no fallback from FROST mode to single-key
+signing.
 
-- Lost share: the remaining two participants can still sign. Generate a new 2-of-3 setup with a fresh group key. Migrate ANCHOR_TO_ADDRESS.
-- Compromised share: same as lost - rotate to a new group key. The old address remains valid for verification of historical anchors but stops receiving new ones.
-- All shares lost: protocol halt. This is the catastrophic case. Mitigation: encrypted share backups in geographically separate locations.
+## Production target
 
-### Migration path
+Production threshold custody requires a different process topology:
 
-1. Generate FROST key shares (3 participants, threshold 2)
-2. Derive the group unified address
-3. Update ANCHOR_TO_ADDRESS in config
-4. Existing anchors remain valid - they reference Merkle roots, not signing keys
-5. New anchors use the threshold address
-6. No protocol version bump needed - the anchor memo format is unchanged
-7. Operators verify the new address appears in anchor transactions
+1. Build the unsigned anchor transaction in a coordinator with no full spending
+   key and no signing quorum.
+2. Keep each long-term share in a separate signer process and custody domain.
+3. Show each signer the root, memo, recipient, amount, network, and transaction
+   digest before approval.
+4. Bind one-time nonce commitments and signature shares to that exact signing
+   session.
+5. Aggregate and verify the signature before broadcast.
+6. Record the transaction identifier and confirmation independently of the
+   signer transport.
 
-### What this does NOT cover
+At least two signer processes must be independent of the coordinator and of
+each other. Removing only `ANCHOR_SEED` is insufficient if the coordinator still
+holds two shares.
 
-- DKG (distributed key generation) - overkill for 3 known participants, adds complexity without proportional benefit at this scale
-- Re-sharing (changing the threshold or participant set without rotating the group key) - future work if the operator set grows
-- Hardware security modules - nice to have, not blocking
+## Threat boundary
 
-## Dependencies
+A real 2-of-3 deployment can tolerate loss or compromise of one share. It does
+not protect against two-share collusion, bad transaction review, compromised
+signer policy, nonce reuse, broadcast failure, or an incorrect Merkle root.
 
-- frost-zcash crate (or frost-ed25519 with Zcash binding)
-- Orchard spending key derivation from FROST group key
-- zingo-cli or zcash-cli support for external signing (currently zingo-cli does not support FROST natively - this may require a custom tx builder)
+The current co-located experiment does not claim the one-share compromise
+property. Its purpose is compatibility testing and negative validation of
+ceremony inputs.
 
-## Open questions
+## Promotion gate
 
-1. Does zingo-cli support importing a FROST group spending key, or do we need a custom Orchard transaction builder?
-2. Should the coordinator be a separate binary or integrated into zec-pay?
-3. What is the minimum viable participant set for the first deployment? (Likely: operator + backup operator + cold storage)
+Do not describe FROST as production custody until all of these receipts exist:
 
-## References
+- two independent signer services with authenticated, replay-resistant sessions;
+- no full spending key and fewer than two shares in the coordinator process;
+- testnet transaction and recovery tests;
+- signer policy tests for wrong root, memo, recipient, amount, and network;
+- nonce lifecycle and crash-recovery tests;
+- an explicit mainnet authority gate and rollback procedure.
 
-- FROST Internet-Draft: https://datatracker.ietf.org/doc/draft-irtf-cfrg-frost/
-- Zcash FROST: https://github.com/ZcashFoundation/frost
-- ZAP1 anchor format: ONCHAIN_PROTOCOL.md Section 11 (MERKLE_ROOT memo)
-- Current anchor automation: auto_anchor.sh (host cron) and src/anchor.rs (in-container, currently disabled)
+The ZAP1 memo and Merkle proof formats do not depend on the signing topology, so
+historical proof verification remains unchanged.

@@ -1,8 +1,10 @@
 //! FROST_SIGNING_PROTOCOL.rs
 //!
-//! Sanitized reference code for the ZAP1 anchor-signing flow using
-//! FROST(Pallas, BLAKE2b-512). This document preserves the protocol logic
-//! while omitting any real key share values or deployment-specific file paths.
+//! Sanitized reference code for a FROST(Pallas, BLAKE2b-512) signing round.
+//! This is not the production custody architecture. The current ZAP1 runtime
+//! co-locates a full spending seed and two long-term shares in one process.
+//! Production threshold custody requires separate signer processes, signer-side
+//! policy checks, and a coordinator that holds no full spending key or quorum.
 
 use frost_core::{frost, Ciphersuite, VerifyingKey};
 use reddsa::frost::redpallas::{keys, round1, Identifier, PallasBlake2b512};

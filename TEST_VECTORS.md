@@ -1,7 +1,11 @@
 # ZAP1 Test Vectors
 
-Date: 2026-03-31
-Status: Protocol specification deliverable
+Original fixture date: 2026-03-31
+Updated: 2026-08-13
+Status: Implementation profile
+Source binding: this file is included in the runtime-source manifest recorded
+by `/build/info` and the external clean-archive build receipt. It does not
+self-assert a commit identifier.
 Sources:
 
 - `tests/memo_merkle_test.rs`
@@ -11,11 +15,11 @@ Sources:
 - `conformance/tree_vectors.json`
 - `ONCHAIN_PROTOCOL.md`
 
-This document publishes a standalone test vector suite for all twelve ZAP1 event types (`0x01` through `0x0C`), plus Merkle tree construction vectors and memo encoding vectors.
+This document publishes fixed vectors for all 18 event types implemented in this repository, plus Merkle tree and memo-encoding vectors.
 
 Hash rules:
 
-- Leaf hashing for `0x01` through `0x08` uses BLAKE2b-256 with personalization `NordicShield_`
+- Leaf hashing for every defined type except `0x09` uses BLAKE2b-256 with personalization `NordicShield_`
 - Merkle node hashing uses BLAKE2b-256 with personalization `NordicShield_MRK`
 - `0x09 MERKLE_ROOT` is a protocol exception: the payload is the raw 32-byte Merkle root, not a second BLAKE2b leaf hash
 
@@ -163,7 +167,12 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "type_byte": "0x0B",
       "status": "active",
       "construction_rule": "BLAKE2b_32(personalization: NordicShield_, input: 0x0B || len(wallet_hash) || wallet_hash || amount_zat(8 bytes BE) || len(validator_id) || validator_id)",
-      "note": "Same construction as STAKING_DEPOSIT with type byte 0x0B"
+      "input_fields": {
+        "wallet_hash": "crosslink_validator_001",
+        "amount_zat": 500000000,
+        "validator_id": "validator-london-01"
+      },
+      "expected_hash": "02cf2490cb4746354914af7225187aa9fab5095a1e5e7f76246c7ae8f29172c0"
     },
     {
       "event_type": "STAKING_REWARD",
@@ -176,11 +185,79 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
         "epoch": 1
       },
       "expected_hash": "22371dd6f20d531631e331dc6ff27cd633e6eee9c92b3df1418da53885aaec43"
+    },
+    {
+      "event_type": "GOVERNANCE_PROPOSAL",
+      "type_byte": "0x0D",
+      "input_fields": {
+        "wallet_hash": "dao_operator_001",
+        "proposal_id": "proposal-001",
+        "proposal_hash": "abcdef1234"
+      },
+      "expected_hash": "2106e98c28c3f8812ecdfe3a7a97c31eeb88096ae69162f57eec1d17d4c371d7",
+      "construction_rule": "BLAKE2b_32(0x0D || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(proposal_hash) || proposal_hash)"
+    },
+    {
+      "event_type": "GOVERNANCE_VOTE",
+      "type_byte": "0x0E",
+      "input_fields": {
+        "wallet_hash": "voter_001",
+        "proposal_id": "proposal-001",
+        "vote_commitment": "commitment_hash_001"
+      },
+      "expected_hash": "9506b5d69b9e8ee0305460440a87205ae405acab6f17dd3cbd1d45969aa2a9ef",
+      "construction_rule": "BLAKE2b_32(0x0E || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(vote_commitment) || vote_commitment)"
+    },
+    {
+      "event_type": "GOVERNANCE_RESULT",
+      "type_byte": "0x0F",
+      "input_fields": {
+        "wallet_hash": "dao_operator_001",
+        "proposal_id": "proposal-001",
+        "result_hash": "tally_hash_001"
+      },
+      "expected_hash": "ea0cb641d1ca12a1bf943057a77c5a5715d0bccb0d3a6862a907fc7b352191f4",
+      "construction_rule": "BLAKE2b_32(0x0F || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(result_hash) || result_hash)"
+    },
+    {
+      "event_type": "AGENT_REGISTER",
+      "type_byte": "0x40",
+      "input_fields": {
+        "agent_id": "agent_001",
+        "pubkey_hash": "pubkey_hash_001",
+        "model_hash": "model_hash_001",
+        "policy_hash": "policy_hash_001"
+      },
+      "expected_hash": "e3042e9891a9eb88fd4e8053189abe27707803bf81ae6caea4508c3d4bd7ebda",
+      "construction_rule": "BLAKE2b_32(0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)"
+    },
+    {
+      "event_type": "AGENT_POLICY",
+      "type_byte": "0x41",
+      "input_fields": {
+        "agent_id": "agent_001",
+        "policy_version": 7,
+        "rules_hash": "rules_hash_001"
+      },
+      "expected_hash": "93686221f113a403eeeab7b15d7c5845fe9a9abb16d3ad0931d155c23b53a75a",
+      "construction_rule": "BLAKE2b_32(0x41 || len(agent_id) || agent_id || policy_version_be || len(rules_hash) || rules_hash)"
+    },
+    {
+      "event_type": "AGENT_ACTION",
+      "type_byte": "0x42",
+      "input_fields": {
+        "agent_id": "agent_001",
+        "action_type": "tool_call",
+        "input_hash": "input_hash_001",
+        "output_hash": "output_hash_001"
+      },
+      "expected_hash": "d68620ccc6de6957ab6b01fe8830ac64e2e2c455b80ce4506ef41078bcbb76f6",
+      "construction_rule": "BLAKE2b_32(0x42 || len(agent_id) || agent_id || len(action_type) || action_type || len(input_hash) || input_hash || len(output_hash) || output_hash)"
     }
   ],
   "conformance_vectors": [
     {
-      "description": "mainnet PROGRAM_ENTRY from block 3,286,631",
+      "description": "historical operator PROGRAM_ENTRY fixture under a root the API maps to block 3,286,631",
       "event_type": "PROGRAM_ENTRY",
       "type_byte": "0x01",
       "input_fields": {
@@ -200,7 +277,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "source": "conformance/hash_vectors.json"
     },
     {
-      "description": "mainnet OWNERSHIP_ATTEST",
+      "description": "historical operator OWNERSHIP_ATTEST fixture",
       "event_type": "OWNERSHIP_ATTEST",
       "type_byte": "0x02",
       "input_fields": {
@@ -260,7 +337,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "type_byte": "0x01",
       "payload_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
       "expected_memo_string": "ZAP1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-      "expected_byte_length": 73,
+      "expected_byte_length": 72,
       "note": "Format is {prefix}:{type_hex}:{payload_hex}. All fields are ASCII.",
       "source": "conformance/hash_vectors.json memo_wire_format"
     },
@@ -270,7 +347,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "type_byte": "0x09",
       "payload_hash": "94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
       "expected_memo_string": "ZAP1:09:94421ae28effbe52f651b33eb62c3b428d2ae62be578e05d471cba9794225bbd",
-      "expected_byte_length": 73,
+      "expected_byte_length": 72,
       "note": "MERKLE_ROOT payload is the raw 32-byte root commitment, not a second leaf hash"
     },
     {
@@ -279,7 +356,7 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
       "type_byte": "0x01",
       "payload_hash": "075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
       "expected_memo_string": "NSM1:01:075b00df286038a7b3f6bb70054df61343e3481fba579591354a00214e9e019b",
-      "expected_byte_length": 73,
+      "expected_byte_length": 72,
       "note": "NSM1 prefix is accepted during decode for backward compatibility. New memos always encode with ZAP1.",
       "source": "tests/memo_merkle_test.rs (legacy_nsm1_prefix_decodes)"
     }
@@ -289,10 +366,10 @@ Input encoding matches `src/memo.rs` and `verify_proof.py` exactly:
 
 ## Notes
 
-- All hash values in this document are verified against `conformance/hash_vectors.json`, `conformance/tree_vectors.json`, and `tests/memo_merkle_test.rs`. No values are fabricated.
+- Every fixed hash above is asserted in `tests/memo_merkle_test.rs`; Merkle fixtures are also checked against `conformance/tree_vectors.json`.
 - The sample values are deterministic and can be recomputed with the hash functions in `verify_proof.py` or `src/memo.rs`.
 - Any implementation can use these vectors to confirm leaf construction matches ZAP1.
-- `MERKLE_ROOT` (0x09) is included because it is one of the twelve ZAP1 event types, but it is not hashed the same way as `0x01` through `0x08`. The payload is the raw 32-byte root commitment.
-- `STAKING_DEPOSIT` (0x0A), `STAKING_WITHDRAW` (0x0B), and `STAKING_REWARD` (0x0C) are reserved for Crosslink. No hash functions are implemented in the reference codebase. Their construction rules are preliminary. Concrete test vectors will be added when these types activate.
+- `MERKLE_ROOT` (0x09) carries the raw 32-byte root commitment; it is not leaf-hashed a second time.
+- The staking, governance, and agent constructions are implemented and covered by fixed vectors here. That is an implementation fact, not a claim that an external protocol has adopted them.
 - Merkle tree vectors use `NordicShield_MRK` personalization for internal node hashing and `NordicShield_RTK` for root commitments. Odd-layer carry-up: if a layer has an odd number of nodes, the final node carries up unchanged; the committed root binds `leaf_count`.
-- Memo encoding vectors cover the `ZAP1:{type_hex}:{payload_hex}` wire format (73 ASCII bytes) and the legacy `NSM1` prefix accepted during decode.
+- Memo encoding vectors cover the `ZAP1:{type_hex}:{payload_hex}` wire format (72 ASCII bytes) and the legacy `NSM1` prefix accepted during decode.

@@ -4,20 +4,32 @@
 
 **Version:** 3.0.0  
 **Date:** 2026-03-28  
-**Status:** Deployed on Zcash mainnet
+**Status:** Reference implementation; older reachable service reports Mainnet
 
 ## 1. Overview
 
-ZAP1 uses the Zcash blockchain as the source of truth for attestation operations. Every significant event is represented as a structured memo commitment and aggregated into a BLAKE2b Merkle tree whose root is periodically anchored to Zcash. Participants verify ownership, deployment, hosting history, renewal history, transfer history, and exit history from the chain record plus Merkle proofs, with no trust required in a private operator database. One production deployment is live on mainnet.
+ZAP1 aggregates typed event claims into a BLAKE2b Merkle tree whose root can be written to an encrypted Zcash memo. Merkle proofs let a verifier recompute inclusion in a supplied root. Transaction IDs establish transaction existence, but Orchard memo contents are encrypted; independently binding a root to a transaction requires a safe disclosure/opening artifact. A Merkle proof does not establish that the underlying event claim is true. An older reachable service reports Mainnet; that does not establish deployment of the current repository candidate.
 
-ZAP1 is the open attestation protocol layer, implemented through the reference tooling and operating procedures described here. No participant PII is recorded on-chain; only wallet hashes, serial hashes, and derived payload hashes are used.
+ZAP1 is the open attestation protocol layer implemented by the reference
+tooling described here. The memo carries a derived payload hash, not the event
+preimage. The service still stores operator-submitted fields off-chain, so
+integrators must apply their own pseudonymization and access controls.
+The `/miner/{wallet_hash}` route family, `/lifecycle/{wallet_hash}`, and full
+`GET /invoice/{id}` JSON route require operator bearer authentication. Payment
+pages use UUID invoice URLs as bearer capabilities and can disclose a payment
+request to anyone who obtains the URL.
 
-Mainnet proof reference:
+Historical mainnet transaction reference:
 
-- first anchor txid: `98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a`
+- first recorded txid: `98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a`
 - block height: `3,286,631`
-- anchored root: `024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
+- API-recorded root: `024e36515ea30efc15a0a7962dd8f677455938079430b9eab174f46a4328a07a`
 - scheme: `ZAP1_LEGACY_DUPLICATE_ODD` (historical anchor; current roots use count-bound commitments)
+
+The reference deployment records this root-to-transaction mapping. The
+transaction can be independently located, but no public memo-opening artifact
+is currently published, so the encrypted memo contents are not independently
+verified by this document alone.
 
 ## 2. Memo Protocol
 
@@ -35,14 +47,12 @@ ZAP1:{type}:{payload_hash}
 Where:
 
 - `ZAP1` is the protocol marker (legacy memos use `NSM1`, accepted during decode)
-- `{type}` is the two-digit lowercase hex event type byte allocated below
+- `{type}` is the two-digit lowercase hex event type byte from the defined registry
 - `{payload_hash}` is the 64-character hex encoding of the 32-byte BLAKE2b-256 payload hash
 
-Total memo size: 72 bytes (4-byte marker + two 1-byte separators + 2-byte
-type hex + 64-byte payload hex). Fits in any Zcash shielded memo (512 bytes
-pre-ZIP 231, 16 KiB post-ZIP 231).
+Total memo size: 72 bytes (4 + 1 + 2 + 1 + 64). Fits in any Zcash shielded memo (512 bytes pre-ZIP 231, 16 KiB post-ZIP 231).
 
-The payload hash is computed per event type using BLAKE2b-256 with `NordicShield_` personalization. See EVENT_SCHEMA.md for the full hash construction rules per type.
+The payload hash is computed per event type using BLAKE2b-256 with `NordicShield_` personalization. See [docs/EVENT_SCHEMA.md](docs/EVENT_SCHEMA.md) for the full hash construction rules per type.
 
 Transaction types:
 
@@ -57,17 +67,18 @@ Transaction types:
 | `0x07` | `TRANSFER` | `hash(old_wallet || new_wallet || serial_number)` | Active |
 | `0x08` | `EXIT` | `hash(wallet_hash || serial_number || timestamp)` | Active |
 | `0x09` | `MERKLE_ROOT` | raw 32-byte Merkle root commitment | Active |
-| `0x0A` | `STAKING_DEPOSIT` | `hash(wallet_hash || amount_zat_be || validator_id)` | Reserved for Crosslink |
-| `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be || validator_id)` | Reserved for Crosslink |
-| `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || reward_zat_be || epoch_be)` | Reserved for Crosslink |
-| `0x0D` | `GOVERNANCE_PROPOSAL` | `hash(wallet_hash || proposal_id || proposal_hash)` | Active |
-| `0x0E` | `GOVERNANCE_VOTE` | `hash(wallet_hash || proposal_id || vote_commitment)` | Active |
-| `0x0F` | `GOVERNANCE_RESULT` | `hash(wallet_hash || proposal_id || result_hash)` | Active |
-| `0x40` | `AGENT_REGISTER` | `hash(agent_id || pubkey_hash || model_hash || policy_hash)` | Active |
-| `0x41` | `AGENT_POLICY` | `hash(agent_id || policy_version_be || rules_hash)` | Active |
-| `0x42` | `AGENT_ACTION` | `hash(agent_id || action_type || input_hash || output_hash)` | Active |
+| `0x0A` | `STAKING_DEPOSIT` | `hash(wallet_hash || amount_zat_be || validator_id)` | Implemented, experimental/legacy |
+| `0x0B` | `STAKING_WITHDRAW` | `hash(wallet_hash || amount_zat_be || validator_id)` | Implemented, experimental/legacy |
+| `0x0C` | `STAKING_REWARD` | `hash(wallet_hash || amount_zat_be || epoch_be)` | Implemented, experimental/legacy |
+| `0x0D` | `GOVERNANCE_PROPOSAL` | `hash(wallet_hash || proposal_id || proposal_hash)` | Implemented, experimental/legacy |
+| `0x0E` | `GOVERNANCE_VOTE` | `hash(wallet_hash || proposal_id || vote_commitment)` | Implemented, experimental/legacy |
+| `0x0F` | `GOVERNANCE_RESULT` | `hash(wallet_hash || proposal_id || result_hash)` | Implemented, experimental/legacy |
+| `0x40` | `AGENT_REGISTER` | `hash(agent_id || pubkey_hash || model_hash || policy_hash)` | Implemented |
+| `0x41` | `AGENT_POLICY` | `hash(agent_id || policy_version_be || rules_hash)` | Implemented |
+| `0x42` | `AGENT_ACTION` | `hash(agent_id || action_type || input_hash || output_hash)` | Implemented |
 
-The protocol defines 18 event types: 15 deployed and 3 reserved for Crosslink.
+The reference implementation defines 18 event types. `POST /event` accepts 15;
+`PROGRAM_ENTRY`, `OWNERSHIP_ATTEST`, and `MERKLE_ROOT` are system-managed.
 
 ## 3. Hash Construction
 
@@ -89,9 +100,9 @@ SHIELD_RENEWAL     = BLAKE2b_32(0x06 || len(wallet_hash) || wallet_hash || year_
 TRANSFER           = BLAKE2b_32(0x07 || len(old_wallet) || old_wallet || len(new_wallet) || new_wallet || len(serial_number) || serial_number)
 EXIT               = BLAKE2b_32(0x08 || len(wallet_hash) || wallet_hash || len(serial_number) || serial_number || timestamp_be)
 MERKLE_ROOT        = current count-bound Merkle root commitment
-STAKING_DEPOSIT    = BLAKE2b_32(0x0A || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
-STAKING_WITHDRAW   = BLAKE2b_32(0x0B || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
-STAKING_REWARD     = BLAKE2b_32(0x0C || len(wallet_hash) || wallet_hash || reward_zat_be || epoch_be)
+STAKING_DEPOSIT     = BLAKE2b_32(0x0A || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+STAKING_WITHDRAW    = BLAKE2b_32(0x0B || len(wallet_hash) || wallet_hash || amount_zat_be || len(validator_id) || validator_id)
+STAKING_REWARD      = BLAKE2b_32(0x0C || len(wallet_hash) || wallet_hash || amount_zat_be || epoch_be)
 GOVERNANCE_PROPOSAL = BLAKE2b_32(0x0D || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(proposal_hash) || proposal_hash)
 GOVERNANCE_VOTE     = BLAKE2b_32(0x0E || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(vote_commitment) || vote_commitment)
 GOVERNANCE_RESULT   = BLAKE2b_32(0x0F || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(result_hash) || result_hash)
@@ -102,16 +113,19 @@ AGENT_ACTION        = BLAKE2b_32(0x42 || len(agent_id) || agent_id || len(action
 
 Implementation notes:
 
-- `wallet_hash` is an operator-generated hash derived from the participant wallet
+- except for the historical `PROGRAM_ENTRY` formula, `len(value)` is the
+  UTF-8 byte length encoded as an unsigned two-byte big-endian integer
+- `PROGRAM_ENTRY` hashes the submitted `wallet_hash` bytes directly after
+  the type byte for compatibility with the implemented profile
+- `wallet_hash` is an operator-submitted subject identifier; the API does not
+  independently derive or authenticate it
 - `serial_hash` in the memo layout is `BLAKE2b_32(serial_number)` when a serial exists
 - `contract_sha256` is the SHA-256 digest of the hosted contract artifact
-- strings are encoded as UTF-8 bytes; `len(value)` is the byte length encoded
-  as an unsigned 16-bit big-endian integer
-- `timestamp` and `amount_zat` are unsigned 64-bit big-endian integers
-- `month`, `year`, `epoch`, and `policy_version` are unsigned 32-bit
-  big-endian integers
+- integer fields are big-endian
 - no memo payload includes participant name, email, phone number, or postal address
-- `STAKING_DEPOSIT`, `STAKING_WITHDRAW`, and `STAKING_REWARD` are reserved for Crosslink. They are not yet active, and their hash construction is preliminary and subject to change when the Crosslink staking protocol finalizes.
+- types `0x0A` through `0x0F` are accepted by the current implementation and
+  occur in historical data, but their higher-level staking and governance
+  semantics remain experimental; they are not a claim that Crosslink is final
 
 ## 4. Merkle Tree
 
@@ -128,7 +142,8 @@ Rules:
 - the raw tree root is committed as `BLAKE2b_32(0x01 || leaf_count_be_u64 || raw_tree_root)`
 - root commitment hashing uses the personalization `NordicShield_RTK`
 - the current committed root is recomputed after each insertion
-- root history is preserved so older proofs remain tied to a specific anchor
+- root rows are preserved; only roots with a recorded transaction reference
+  have an anchor mapping
 - historical anchors produced before count binding used odd-node duplication and are verified only under `ZAP1_LEGACY_DUPLICATE_ODD`
 
 Persistence model:
@@ -147,7 +162,8 @@ Anchor rules:
 - memo type is always `0x09`
 - payload is the 32-byte current Merkle root commitment
 - send path uses `zingo-cli`
-- anchor cadence is every 10 events or every 24 hours, whichever comes first
+- intended anchor trigger is every 10 events or every 24 hours, whichever comes
+  first; public liveness must be checked because the trigger is not a guarantee
 - the resulting txid and mined block height are recorded with the root
 
 Operational flow:
@@ -155,10 +171,14 @@ Operational flow:
 1. The reference implementation reads the latest root from the Merkle store.
 2. The root is encoded as an `ZAP1:09` memo.
 3. A dust self-transfer or controlled shielded transfer is broadcast with that memo.
-4. The txid becomes the public proof handle for that committed root.
+4. The deployment records the txid as the transaction reference claimed for that root.
 5. When mined, the block height is recorded alongside the root.
 
-The txid is part of the proof bundle. A verifier checks the memo in the mined transaction and confirms it matches the Merkle root derived from the proof path.
+The txid is part of the proof bundle. Transaction existence and mined height are
+independently checkable. Orchard memo contents are encrypted, so a public txid
+alone does not bind the supplied root to the transaction. That binding requires
+a safe memo disclosure/opening artifact, which the reference deployment does
+not currently publish.
 
 ## 6. Participant Verification
 
@@ -166,12 +186,13 @@ Participant verification flow:
 
 1. Open `api.frontiercompute.cash/verify/{leaf_hash}`.
 2. Read the displayed leaf hash, Merkle proof path, root, anchor txid, and block height.
-3. Recompute the event leaf from the participant wallet hash and, where applicable, the serial number.
+3. Recompute the event leaf from event preimages separately disclosed to the verifier, including the participant wallet hash and, where applicable, the serial number.
 4. Walk the proof path to recompute the raw tree root.
 5. Commit `leaf_count` and the raw tree root with `NordicShield_RTK`, then confirm the derived root commitment equals the displayed root.
 6. Open the anchor txid in a Zcash explorer or with local node tooling.
-7. Confirm the memo contains the matching `ZAP1:09` root commitment.
-8. Confirm the transaction is mined at the stated block height on Zcash mainnet.
+7. Confirm the transaction exists and is mined at the stated block height.
+8. If a safe memo disclosure/opening artifact is supplied, verify it separately
+   to bind the root commitment to the encrypted transaction memo.
 
 CLI verification can be implemented as:
 
@@ -193,10 +214,19 @@ The full participant lifecycle uses these event classes:
 6. Annual privacy shield is renewed: `SHIELD_RENEWAL`
 7. Ownership changes to a new wallet: `TRANSFER`
 8. Participant exits or requests delivery or termination: `EXIT`
-9. Every batch of deployed events is committed by `MERKLE_ROOT`
-10. Reserved Crosslink staking events (`STAKING_DEPOSIT`, `STAKING_WITHDRAW`, `STAKING_REWARD`) remain inactive until the staking protocol is finalized
+9. A root becomes eligible for publication under the configured anchor trigger
+10. Experimental/legacy staking and governance event encodings remain distinct
+    from any claim that the corresponding external protocol is final
 
-This produces a continuous on-chain record for the program lifecycle, while keeping participant identity off-chain.
+This produces an append-only application Merkle record. Some roots have
+API-recorded Zcash transaction references. Event preimages stay out of the
+memo, but the service stores submitted identifiers off-chain. Public
+event feeds and proof bundles withhold those preimages. The
+`/miner/{wallet_hash}` route family, `/lifecycle/{wallet_hash}`, and full
+`GET /invoice/{id}` JSON route require operator bearer authentication. Payment
+pages use UUID invoice URLs as bearer capabilities and can disclose a payment
+request to anyone who obtains the URL. Public
+root-to-memo binding still requires a safe disclosure artifact.
 
 ## 8. Transfer Protocol
 
@@ -208,43 +238,51 @@ Transfer flow:
 2. Operator verifies transfer intent off-chain.
 3. The protocol creates a `TRANSFER` event binding old wallet, new wallet, and serial number.
 4. The transfer leaf is inserted into the Merkle tree.
-5. A later `MERKLE_ROOT` anchor commits that transfer to Zcash.
+5. A later `MERKLE_ROOT` operation records a Zcash transaction reference for the covering root.
 6. Old owner dashboard state changes to transferred.
 7. New owner dashboard state includes the inherited machine history.
 
-The old and new wallet hashes are the only ownership identifiers used in the on-chain record.
+The memo contains only the derived payload hash. The old and new subject
+identifiers remain in the application record and in any witness the operator
+chooses to disclose.
 
-## 9. Wyoming DAO LLC Compliance
+## 9. Wyoming filing boundary
 
-Section VI of the LiquidLV DAO LLC articles of organization requires a public smart contract identifier. LiquidLV DAO LLC uses the Zcash anchor address for the ZAP1 protocol as that identifier.
+The operator associated a Zcash address and this protocol note with its own DAO
+filing records. Wyoming Statute 17-31-106(b) addresses a publicly available
+identifier for a smart contract directly used to manage, facilitate, or operate
+a DAO.
 
-Compliance mapping:
+This specification does not establish that:
 
-- the anchor address is the public identifier
-- `ONCHAIN_PROTOCOL.md` is the published protocol specification
-- Merkle root anchor transactions are the public audit trail
-- the sequence of anchored roots shows the DAO's program operations on-chain
+- the address is a statutory smart-contract identifier
+- the address or protocol appeared in accepted articles
+- the filing is legally sufficient
+- the entity remains in good standing
 
-For Wyoming filing purposes, the protocol is the DAO's audit and commitment layer implemented on Zcash. The anchor address and this specification together identify the mechanism used for DAO operations under Section VI.
+Those conclusions require filed articles, current state records, and qualified
+legal review. See `WYOMING_DAO_COMPLIANCE.md`.
 
 ## 10. Security Considerations
 
-- no participant PII is written to the chain
+- no raw participant PII is written to the chain by the implemented memo construction
 - BLAKE2b personalization separates ZAP1 hashes from other protocol contexts
 - Merkle proofs are non-interactive and independently checkable
 - shielded memos limit public disclosure while still allowing controlled verification
+- the `/miner/{wallet_hash}` route family, `/lifecycle/{wallet_hash}`, and full `GET /invoice/{id}` JSON route require operator bearer authentication; UUID payment-page URLs are bearer capabilities
 - anchor transactions are low-value self-commits, minimizing cost
-- FROST 2-of-3 signing can protect treasury or protocol-controlled funds where used
+- the repository's current co-located FROST experiment does not provide independent threshold custody; production use requires separate signer processes and removal of the full spending key from the coordinator
 - serial assignment still depends on correct operational handling by the operator
-- the chain record is immutable after confirmation, but off-chain business inputs must still be entered correctly
+- a confirmed transaction is immutable under normal chain assumptions; the
+  application's root-to-txid mapping and business inputs remain
+  operator-controlled records
 
 ## 11. API Reference
 
-The deployed `/protocol/info` endpoint reports the 18-type registry
-(15 deployed, 3 reserved). Event insertion and lifecycle endpoints support
-their documented classes, while `/stats` currently aggregates the nine core
-classes `0x01`-`0x09`. This section documents the protocol-level contract
-for those endpoints.
+The deployed API exposes authenticated event insertion and participant detail
+routes alongside public aggregate, proof, and operational status routes. The
+registry contains 18 defined types: 15 accepted by `POST /event` and 3
+system-managed types. This section documents the protocol-level contract.
 
 ### `POST /event`
 
@@ -252,7 +290,11 @@ Creates one protocol event and inserts the corresponding leaf into the Merkle tr
 
 Common required fields for all event requests:
 
-- `event_type`  - one of: `CONTRACT_ANCHOR`, `DEPLOYMENT`, `HOSTING_PAYMENT`, `SHIELD_RENEWAL`, `TRANSFER`, `EXIT`
+- `event_type` - one of the 15 write-API types: `CONTRACT_ANCHOR`,
+  `DEPLOYMENT`, `HOSTING_PAYMENT`, `SHIELD_RENEWAL`, `TRANSFER`, `EXIT`,
+  `STAKING_DEPOSIT`, `STAKING_WITHDRAW`, `STAKING_REWARD`,
+  `GOVERNANCE_PROPOSAL`, `GOVERNANCE_VOTE`, `GOVERNANCE_RESULT`,
+  `AGENT_REGISTER`, `AGENT_POLICY`, or `AGENT_ACTION`
 - `wallet_hash`  - participant wallet identifier
 
 Timestamps are generated server-side. `PROGRAM_ENTRY` and `OWNERSHIP_ATTEST` are created automatically by the scanner and `/assign` endpoint respectively, not via `/event`.
@@ -277,9 +319,26 @@ Protocol notes:
 - `HOSTING_PAYMENT` and `SHIELD_RENEWAL` are also created automatically when the corresponding invoice type (`hosting` or `renewal`) is paid
 - `MERKLE_ROOT` is the anchor commitment; created by the `anchor_root` binary or anchor automation
 
+These event names are application classifications. A leaf created after an
+invoice state transition does not by itself prove payer, payee, amount,
+settlement, or the completeness of payment history. Primary chain and wallet
+evidence is a separate layer.
+
+### `GET /invoice/{id}`
+
+Returns the full invoice JSON record. Requires operator bearer authentication.
+
+### `GET /pay/{id}`
+
+Returns the participant-facing payment page without operator authentication.
+The UUID invoice URL is a bearer capability. Anyone who obtains it can view the
+payment request, including its address, amount, status, and rendered memo
+metadata.
+
 ### `GET /lifecycle/{wallet_hash}`
 
-Returns the lifecycle view for one participant wallet hash.
+Returns the lifecycle view for one participant wallet hash. Requires operator
+bearer authentication.
 
 Expected contents:
 
@@ -347,60 +406,76 @@ Response fields:
 | `machines_to_next_tier` | Machines needed to reach the next tier |
 | `next_tier` | Next hosting tier target |
 | `total_leaves` | Total Merkle leaves |
-| `total_anchors` | Total anchored Merkle roots |
-| `first_anchor_block` | First anchored block height |
-| `last_anchor_block` | Most recent anchored block height |
-| `zec_per_month_per_machine` | Current planning estimate for monthly ZEC output per machine |
-| `estimated_total_zec_month` | Aggregate estimated monthly ZEC output across the cohort |
+| `total_anchors` | Roots with recorded transaction references |
+| `first_anchor_block` | First recorded transaction height |
+| `last_anchor_block` | Most recent recorded transaction height |
 
 ### `GET /miner/{wallet_hash}`
 
-The participant dashboard now includes:
+The participant dashboard requires operator bearer authentication and includes:
 
-- revenue estimate fields: `ZEC / month`, `ZEC / year`, `All-in cost / ZEC`, `Hosting / month`
-- cohort progress data: total machines, current tier, machines to next tier, progress bar
+- assigned miner status and telemetry when available
+- billing invoice amounts, status, and payment links
+- cohort progress data: total machines, current tier, machines to next tier, and progress bar
 
 Dashboard notes:
 
-- revenue scales with the number of machines assigned to the wallet
-- hosting cost is tier-aware
+- the dashboard does not calculate or promise expected ZEC output, revenue, or cost per ZEC
+- a configured payout destination and miner telemetry do not prove a payout
 - the rendered dashboard is a participant convenience surface, not a protocol proof surface
 
 ## 12. Profiles
 
 ZAP1 defines a base profile and reserves extension points for future proving and credential systems.
 
-### ZAP1 Base Profile (current, deployed)
+### ZAP1 Base Profile (current repository profile)
 
-Deterministic hash-and-Merkle attestation. Event payloads are hashed with BLAKE2b-256 using domain-separated personalization. Leaves are aggregated into a Merkle tree. Roots are anchored to Zcash via shielded memos. Verification: recompute hash, walk Merkle path, check anchor.
+Deterministic hash-and-Merkle attestation. Event payloads are hashed with
+BLAKE2b-256 using domain-separated personalization. Leaves are aggregated into
+a Merkle tree. The reference operator records Zcash transaction references for
+roots. Public verification recomputes the leaf and Merkle path against the
+supplied root; independently checking encrypted memo contents additionally
+requires a safe disclosure/opening artifact.
 
-This profile is stable. All existing proof bundles, test vectors, and verification tools target the base profile.
+This is the current repository implementation profile. Existing proof bundles,
+test vectors, and verifier candidates target it. That is an implementation
+compatibility statement, not standards adoption.
 
 ### ZAP1 Proof Profile (reserved)
 
-Optional ZK proof attachment for proof-carrying attestation. When present, a `proof_commitment` field in the event bundle binds a zero-knowledge proof to the leaf hash. The proof attests that the payload was correctly derived from private inputs matching a declared schema, without revealing those inputs.
+Optional ZK proof attachment for proof-carrying attestation. If implemented, a
+`proof_commitment` field could bind an external proof to a leaf. What that
+proof establishes would depend on the external statement, proving system,
+verification key, and verifier policy. ZAP1 does not implement that profile.
 
 The proof profile is proving-system agnostic. Implementations may use any system that produces a verifiable commitment, including but not limited to:
 - Jolt (a16z crypto)  - zkVM for general computation
 - Nova / SuperNova  - folding schemes for incremental computation
 - Halo 2 (Zcash Foundation)  - recursive proof composition
 
-The base profile leaf hash remains unchanged. The proof commitment is an optional extension that verification tools may check when present and ignore when absent.
+Any future proof commitment requires a versioned extension and explicit
+verification policy. Current base verifiers do not treat an absent or unknown
+proof as a verified statement.
 
 ### ZAP1 Credential Profile (reserved)
 
-Derive privacy-preserving credentials from attestation history. A participant with N lifecycle events committed to the Merkle tree can prove properties of their history (e.g., "participant for 6+ months", "all hosting payments current") without revealing their wallet hash or specific events.
+This design slot explores selective disclosure over event receipts. Current
+inclusion proofs cannot establish history completeness, payment status,
+non-exit, or good standing. No credential issuer or verifier is implemented.
 
-This profile enables cross-operator credential portability: a credential derived from one ZAP1 deployment can be verified against the anchored Merkle root without contacting the issuing operator.
+Any future portable credential would need a versioned schema, disclosed
+witnesses, issuer authentication, revocation and freshness rules, and a trusted
+root policy. Authenticating root publication remains separate.
 
 The credential profile depends on the proof profile and is not expected to deploy before proving system integration stabilizes.
 
 ## 13. Versioning and Extension Policy
 
-- The allocated registry entries (`0x01`-`0x0F`, `0x40`-`0x42`) are
-  append-only. Existing types are never redefined.
-- `0x00` is invalid and reserved. Unallocated type bytes
-  (`0x10`-`0x3F`, `0x43`-`0xFF`) are reserved for future allocation.
+- The defined event registry (`0x01`-`0x0F`, `0x40`-`0x42`) is
+  append-only. Existing type-byte assignments are never redefined.
+- `0x00` is invalid. Unassigned byte values are not implemented merely
+  because a profile document discusses them; allocation requires a versioned
+  registry update and vectors.
 - Profiles are namespaced: `base`, `proof`, `credential`. New profiles do not modify the base profile.
 - Hash construction rules for the base profile are frozen at v3.0.0. Changes require a new major version.
 - The `NordicShield_` personalization is deployment-specific. Other deployments may use different personalization strings without conflicting with the protocol specification. The zap1-verify SDK (v0.2.0+) accepts configurable personalization.
@@ -409,7 +484,8 @@ The credential profile depends on the proof profile and is not expected to deplo
 
 ### 3.0.0 documentation errata (2026-08-03)
 - Reconciled the registry text and tables with the 18 implemented memo types
-- Recorded the 15 deployed / 3 Crosslink-reserved split
+- Recorded the 15 write-API / 3 system-managed split
+- Distinguished Merkle inclusion, transaction existence, encrypted-memo binding, and event truth
 
 ### 3.0.0 (2026-03-31)
 - Added type byte prefix to leaf hash construction (Section 3)

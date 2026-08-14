@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ZAP1 Attestation Protocol
-  description: Read-only API for Zcash on-chain attestation discovery, verification, and memo classification.
+  description: API for Zcash attestation discovery, operator-authorized event submission, verification, and memo classification.
   version: "3.0.0"
   license:
     name: MIT
@@ -26,7 +26,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [protocol, version, event_types, deployed_types, hash_function]
+                required: [protocol, version, event_types, deployed_types, reserved_types, defined_types, defined_event_types, write_api_types, write_api_event_types, system_managed_types, system_managed_event_types, hash_function]
                 properties:
                   protocol:
                     type: string
@@ -37,12 +37,48 @@ paths:
                   event_types:
                     type: integer
                     example: 18
+                    deprecated: true
+                    description: Deprecated alias for defined_types
+                  event_types_semantics:
+                    type: string
+                    example: deprecated alias for defined_types
                   deployed_types:
                     type: integer
+                    deprecated: true
                     example: 15
+                    description: Deprecated alias for write_api_types
+                  deployed_types_semantics:
+                    type: string
+                    example: deprecated alias for write_api_types
                   reserved_types:
                     type: integer
+                    deprecated: true
                     example: 3
+                    description: Deprecated legacy count of system-managed defined types
+                  reserved_types_semantics:
+                    type: string
+                    example: deprecated legacy count; these are system-managed defined types, not reserved or unallocated codes
+                  defined_types:
+                    type: integer
+                    example: 18
+                  defined_event_types:
+                    type: array
+                    items:
+                      type: string
+                  write_api_types:
+                    type: integer
+                    example: 15
+                  write_api_event_types:
+                    type: array
+                    items:
+                      type: string
+                  system_managed_types:
+                    type: integer
+                    example: 3
+                  system_managed_event_types:
+                    type: array
+                    items:
+                      type: string
                   hash_function:
                     type: string
                     example: BLAKE2b-256
@@ -55,7 +91,7 @@ paths:
 
   /stats:
     get:
-      summary: Anchor and leaf counts
+      summary: Recorded transaction-reference and leaf counts
       operationId: getStats
       responses:
         "200":
@@ -64,11 +100,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [total_anchors, total_leaves]
+                required: [total_anchors, total_leaves, event_types, type_counts, classified_leaves, unclassified_leaves]
                 properties:
                   total_anchors:
                     type: integer
                   total_leaves:
+                    type: integer
+                  event_types:
+                    type: array
+                    items:
+                      type: string
+                  type_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  classified_leaves:
+                    type: integer
+                  unclassified_leaves:
                     type: integer
                   first_anchor_block:
                     type: integer
@@ -134,7 +182,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [leaf_hash, event_type, wallet_hash, verify_url, proof_url]
+                      required: [leaf_hash, event_type, created_at, preimage_disclosure, verify_url, proof_url]
                       properties:
                         leaf_hash:
                           type: string
@@ -143,13 +191,11 @@ paths:
                         event_type:
                           type: string
                           example: PROGRAM_ENTRY
-                        wallet_hash:
-                          type: string
-                        serial_number:
-                          type: string
-                          nullable: true
                         created_at:
                           type: string
+                        preimage_disclosure:
+                          type: string
+                          enum: [withheld from the public event feed]
                         verify_url:
                           type: string
                         proof_url:
@@ -285,22 +331,25 @@ paths:
                     type: string
                   leaf:
                     type: object
+                    required: [hash, event_type, created_at, preimage_disclosure, event_type_authentication]
                     properties:
                       hash:
                         type: string
                       event_type:
                         type: string
-                      wallet_hash:
-                        type: string
-                      serial_number:
-                        type: string
-                        nullable: true
                       created_at:
                         type: string
+                      preimage_disclosure:
+                        type: string
+                        enum: [withheld from the public proof bundle]
+                      event_type_authentication:
+                        type: string
+                        enum: [unverified_server_metadata_without_disclosed_witness]
                   proof:
                     type: array
                     items:
                       type: object
+                      required: [hash, position]
                       properties:
                         hash:
                           type: string
@@ -309,6 +358,7 @@ paths:
                           enum: [left, right]
                   root:
                     type: object
+                    required: [hash, leaf_count, created_at, scheme, legacy_allowed, legacy_max_anchor_height]
                     properties:
                       hash:
                         type: string
@@ -316,8 +366,15 @@ paths:
                         type: integer
                       created_at:
                         type: string
+                      scheme:
+                        type: string
+                      legacy_allowed:
+                        type: boolean
+                      legacy_max_anchor_height:
+                        type: integer
                   anchor:
                     type: object
+                    required: [txid, height]
                     properties:
                       txid:
                         type: string
@@ -388,9 +445,10 @@ paths:
               properties:
                 event_type:
                   type: string
-                  enum: [CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT, STAKING_DEPOSIT, STAKING_WITHDRAW, STAKING_REWARD, GOVERNANCE_PROPOSAL, GOVERNANCE_VOTE, GOVERNANCE_RESULT]
+                  enum: [CONTRACT_ANCHOR, DEPLOYMENT, HOSTING_PAYMENT, SHIELD_RENEWAL, TRANSFER, EXIT, STAKING_DEPOSIT, STAKING_WITHDRAW, STAKING_REWARD, GOVERNANCE_PROPOSAL, GOVERNANCE_VOTE, GOVERNANCE_RESULT, AGENT_REGISTER, AGENT_POLICY, AGENT_ACTION]
                 wallet_hash:
                   type: string
+                  description: Historical field name. The API does not derive a hash. Submit a domain-separated pseudonym.
                 serial_number:
                   type: string
                 facility_id:
@@ -417,6 +475,24 @@ paths:
                   type: string
                 result_hash:
                   type: string
+                agent_id:
+                  type: string
+                pubkey_hash:
+                  type: string
+                model_hash:
+                  type: string
+                policy_hash:
+                  type: string
+                policy_version:
+                  type: integer
+                rules_hash:
+                  type: string
+                action_type:
+                  type: string
+                input_hash:
+                  type: string
+                output_hash:
+                  type: string
       responses:
         "201":
           description: Event created
@@ -442,6 +518,8 @@ paths:
     get:
       summary: Lifecycle events for a wallet
       operationId: getLifecycle
+      security:
+        - bearerAuth: []
       parameters:
         - name: wallet_hash
           in: path
@@ -455,9 +533,41 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [wallet_hash, events]
                 properties:
+                  wallet_hash:
+                    type: string
                   events:
                     type: array
+                    items:
+                      type: object
+                      required: [leaf_hash, event_type, created_at, anchored, anchored_semantics, transaction_reference_recorded, verify_url]
+                      properties:
+                        leaf_hash:
+                          type: string
+                        event_type:
+                          type: string
+                        serial_number:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+                        anchor_txid:
+                          type: string
+                          nullable: true
+                        anchor_height:
+                          type: integer
+                          nullable: true
+                        anchored:
+                          type: boolean
+                        anchored_semantics:
+                          type: string
+                        transaction_reference_recorded:
+                          type: boolean
+                        verify_url:
+                          type: string
+        "401":
+          description: Missing or invalid operator API key
 
   /build/info:
     get:
@@ -466,6 +576,53 @@ paths:
       responses:
         "200":
           description: Build version and commit info
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, deployment, source, build_assurance, supply_chain, build_metadata]
+                properties:
+                  version:
+                    type: string
+                  librustzcash_rev:
+                    type: string
+                    pattern: '^[0-9a-f]{40}$'
+                  deployment:
+                    type: object
+                    required: [image_id, image_id_present, binding]
+                    properties:
+                      image_id:
+                        type: string
+                        nullable: true
+                        pattern: '^sha256:[0-9a-f]{64}$'
+                      image_id_present:
+                        type: boolean
+                      binding:
+                        type: string
+                  source:
+                    type: object
+                    required: [deployment_revision, source_tree, source_manifest_sha256, source_manifest_verified, public_evidence_revision, public_evidence_url, parity_scope]
+                    properties:
+                      deployment_revision:
+                        type: string
+                      source_tree:
+                        type: string
+                      source_manifest_sha256:
+                        type: string
+                      source_manifest_verified:
+                        type: boolean
+                      public_evidence_revision:
+                        type: string
+                      public_evidence_url:
+                        type: string
+                      parity_scope:
+                        type: string
+                  build_assurance:
+                    type: object
+                  supply_chain:
+                    type: object
+                  build_metadata:
+                    type: object
 
   /badge/status.svg:
     get:

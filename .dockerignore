@@ -1,0 +1,15 @@
+.git
+target*
+**/node_modules
+**/__pycache__
+**/*.pyc
+data
+operators
+.mempalace
+.env*
+!.env.example
+**/.env
+**/.env.*
+**/.seed
+**/*.bak*
+**/.DS_Store

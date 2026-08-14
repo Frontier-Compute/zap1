@@ -1,0 +1,334 @@
+{
+  "schema": "zap1.public-records.v1",
+  "record_date": "2026-08-13",
+  "sealed_at": "2026-08-13T23:46:14.3100433Z",
+  "index_revised_at": "2026-08-14T02:34:11.3256081Z",
+  "purpose": "A deterministic digest index of public records relevant to the ZAP1 Q3 retrogrant application, with exact observation times, byte digests, and claim boundaries.",
+  "hashing": {
+    "algorithm": "SHA-256",
+    "response_scope": "The exact HTTP response body bytes returned at observed_at. HTTP headers are excluded.",
+    "body_scope": "The UTF-8 bytes of the selected body or raw field after JSON decoding. No whitespace normalization is applied.",
+    "reproducibility_boundary": "The pack does not reproduce frozen HTTP response bodies. Recomputing a recorded digest requires possession of the exact historical bytes. A fresh read tests current state and cannot recreate a changed historical response."
+  },
+  "privacy": {
+    "public_inputs_only": true,
+    "excluded": [
+      "private messages",
+      "wallet data",
+      "addresses",
+      "transaction details not already present in the cited public record",
+      "credentials",
+      "restricted corpus"
+    ]
+  },
+  "authority": {
+    "scope": "Local evidence-file creation and deterministic validation only.",
+    "non_authorizations": [
+      "no commit",
+      "no push",
+      "no deployment",
+      "no forum or GitHub write",
+      "no wallet action",
+      "no provider transmission",
+      "no grant-award claim",
+      "no payout-probability claim"
+    ]
+  },
+  "cash": {
+    "scope": "ZAP1 retrogrant",
+    "booked_cash": "$0",
+    "hard_receivable": "$0",
+    "payment_evidence": [],
+    "boundary": "The cited public disbursement row is a separate security bounty. It is not ZAP1 funding and is not evidence of a ZAP1 award, receivable, or payment."
+  },
+  "records": [
+    {
+      "id": "zcg-issue-31",
+      "classification": "PUBLIC_PRIMARY_MUTABLE",
+      "observed_at": "2026-08-13T23:36:23.0285081Z",
+      "public_locator": "https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31",
+      "api_locator": "https://api.github.com/repos/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31",
+      "response_body_bytes": 14665,
+      "response_body_sha256": "c75d6efab4f6f590e81414796f50da61f6b1902b7bcae35a58d23846e39acb37",
+      "selected_body_bytes": 8755,
+      "selected_body_sha256": "c46d5387bfd3a5518acdda3a54d56b7b4fdb9334efe0371fda9bf397919109f3",
+      "state": {
+        "issue_state": "open",
+        "labels": ["Ready For Vote - All Steps Completed"],
+        "created_at": "2026-05-12T21:25:12Z",
+        "updated_at": "2026-08-03T19:28:35Z"
+      },
+      "claim_boundary": "Proves that issue 31 was open and carried the ready-for-vote label at observed_at.",
+      "does_not_prove": ["grant award", "coinholder support", "technical acceptance", "ZCG endorsement", "payment"],
+      "reopen_trigger": "Any current-state claim after observed_at requires a fresh API read."
+    },
+    {
+      "id": "zcg-issue-31-comments-collection",
+      "classification": "PUBLIC_PRIMARY_MUTABLE",
+      "observed_at": "2026-08-13T23:36:23.0285081Z",
+      "api_locator": "https://api.github.com/repos/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31/comments?per_page=100",
+      "response_body_bytes": 11824,
+      "response_body_sha256": "ac98da8390cda23cef9184926a5fcacf0cc4ea50ec230ab4243f4c4ad645cd9f",
+      "claim_boundary": "Pins the complete issue-comment collection returned with per_page=100 at observed_at. Individual material comments are sealed below.",
+      "does_not_prove": ["that comments cannot later be edited or deleted", "administrator endorsement", "award or payment"],
+      "reopen_trigger": "A comment edit, deletion, or new material comment."
+    },
+    {
+      "id": "zcg-official-eligibility-comment",
+      "classification": "PUBLIC_PRIMARY_ATTRIBUTED",
+      "observed_at": "2026-08-13T23:41:11.9401755Z",
+      "public_locator": "https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31#issuecomment-4435296484",
+      "api_locator": "https://api.github.com/repos/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/comments/4435296484",
+      "response_body_bytes": 1905,
+      "response_body_sha256": "827a7570ea0875273564fc4adb257ec40d235342f80f0b7cd68f918300aba8fb",
+      "selected_body_bytes": 117,
+      "selected_body_sha256": "943e522e09f79836cd9d953bf08bbc2eda3f3885b4d1de61cc933007f842ad9e",
+      "state": {
+        "author": "alexgbo",
+        "created_at": "2026-05-12T22:23:41Z",
+        "updated_at": "2026-05-12T22:23:41Z"
+      },
+      "claim_boundary": "The attributed administrator comment says that posting on the forum and sharing the link makes the application officially eligible for the vote.",
+      "does_not_prove": ["award", "vote outcome", "technical validation", "endorsement", "payment"]
+    },
+    {
+      "id": "zcg-q3-scheduling-pointer",
+      "classification": "PUBLIC_PRIMARY_ATTRIBUTED",
+      "observed_at": "2026-08-13T23:41:11.9401755Z",
+      "public_locator": "https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31#issuecomment-4681719603",
+      "api_locator": "https://api.github.com/repos/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/comments/4681719603",
+      "response_body_bytes": 1931,
+      "response_body_sha256": "26fcb9c3152dbdf60541c18da05441989b4d97672c155753a5b2b75d1f01a234",
+      "selected_body_bytes": 143,
+      "selected_body_sha256": "89f4922db8393e89909656b0a4b9aa35f520a11f92d629b758e4c495989b7566",
+      "state": {
+        "author": "alexgbo",
+        "created_at": "2026-06-11T14:37:25Z",
+        "updated_at": "2026-06-11T14:37:25Z"
+      },
+      "claim_boundary": "Pins the administrator-authored Q3 scheduling pointer in the application record.",
+      "does_not_prove": ["current deadline", "award", "technical validation", "payment"],
+      "reopen_trigger": "Use the current controlling program announcement for any deadline or vote-window claim."
+    },
+    {
+      "id": "zcg-a4-funding-clarification",
+      "classification": "PUBLIC_PRIMARY_APPLICANT_AUTHORED",
+      "observed_at": "2026-08-13T23:41:11.9401755Z",
+      "public_locator": "https://github.com/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/31#issuecomment-5170813827",
+      "api_locator": "https://api.github.com/repos/Financial-Privacy-Foundation/ZcashCoinholderGrantsProgram/issues/comments/5170813827",
+      "response_body_bytes": 2794,
+      "response_body_sha256": "1b2604ba451be92892d0aed071f06663fa3c11900ef3c279d3e8ce50315060c5",
+      "selected_body_bytes": 994,
+      "selected_body_sha256": "02ddbf9fb6de170bb8e99c7327da865d09173538c5abdd95a27732d24b3eda02",
+      "state": {
+        "author": "Zk-nd3r",
+        "created_at": "2026-08-03T19:28:35Z",
+        "updated_at": "2026-08-03T19:28:35Z"
+      },
+      "claim_boundary": "Pins the exact applicant-authored funding clarification in the official application record.",
+      "does_not_prove": ["independent validation of every funding statement", "award", "technical acceptance", "payment of the retrogrant"]
+    },
+    {
+      "id": "forum-project-only-post-3",
+      "classification": "PUBLIC_PRIMARY_APPLICANT_AUTHORED",
+      "observed_at": "2026-08-13T23:36:23.0285081Z",
+      "public_locator": "https://forum.zcashcommunity.com/t/retroactive-grant-application-zap1-attestation-protocol-and-verification-tooling/55664/3",
+      "api_locator": "https://forum.zcashcommunity.com/posts/252646.json",
+      "response_body_bytes": 14067,
+      "response_body_sha256": "5096d1aaa38453b429f64c6b529b525fc955d65afc2f629a657bc5ff650e4046",
+      "selected_body_bytes": 350,
+      "selected_body_sha256": "4e15fd60ab223f658393367ab2e1f8b651628a898bfa61b3ce923a8c6d3e3e3c",
+      "state": {
+        "post_id": 252646,
+        "post_number": 3,
+        "version": 1,
+        "author": "zk_nd3r",
+        "created_at": "2026-08-13T02:30:49.668Z",
+        "updated_at": "2026-08-13T02:30:49.668Z"
+      },
+      "claim_boundary": "Pins the project-only forum update. The body contains no funding or payment clarification.",
+      "does_not_prove": ["independent validation", "endorsement", "adoption", "award", "payment"]
+    },
+    {
+      "id": "zcg-public-disbursement-row",
+      "classification": "PUBLIC_PRIMARY_MUTABLE_LEDGER",
+      "observed_at": "2026-08-13T23:36:23.0285081Z",
+      "public_locator": "https://openzcash.org/zcg/disbursements",
+      "response_body_bytes": 832710,
+      "response_body_sha256": "5fb2163c6bbf4e6cd102daf126cafe29c7365815117a8fa4d51bb4379e6e78e4",
+      "matched_row": {
+        "id": "6676217a186350e43c89ac78942f41cc94b2a7a11d0295d13ac708a16a3c65b6",
+        "recipient": "@Zk-nd3r",
+        "type": "Security bounty",
+        "detail": "Security Bounty",
+        "date": "2026-06-26",
+        "usd_cents": 2000000,
+        "zec_zatoshis": 4848000000,
+        "settlement_asset": "ZEC",
+        "origin": "sheet"
+      },
+      "bounded_absence_checks": {
+        "literal_4_77_present": false,
+        "literal_477000000_present": false,
+        "scope": "Only the cited page response body at observed_at."
+      },
+      "claim_boundary": "Proves that the cited public page contained the exact separate security-bounty row and lacked the two tested 4.77 representations at observed_at.",
+      "does_not_prove": ["ZAP1 funding", "ZAP1 award", "absence from every payment source", "independent validation of the applicant-authored 4.77 ZEC statement"],
+      "reopen_trigger": "Any present-tense ledger claim requires a fresh full-page read."
+    },
+    {
+      "id": "daira-nu7-post-22",
+      "classification": "PUBLIC_PRIMARY_ATTRIBUTED",
+      "observed_at": "2026-08-13T23:35:41.8191095Z",
+      "public_locator": "https://forum.zcashcommunity.com/t/nu7-coinholder-vote/56912/22",
+      "api_locator": "https://forum.zcashcommunity.com/posts/252627.json",
+      "response_body_bytes": 17502,
+      "response_body_sha256": "63f9961d52bc1530fb7bb6becc13315e8036b88f701a6912d9b018547bc0ebbe",
+      "selected_body_bytes": 6274,
+      "selected_body_sha256": "c07b4cb8fb269bfcc8afd1249cd6485c9034e8455e821e868a281c71986f9225",
+      "state": {
+        "post_id": 252627,
+        "post_number": 22,
+        "author": "daira",
+        "created_at": "2026-08-12T19:57:12.768Z",
+        "updated_at": "2026-08-12T20:34:14.061Z"
+      },
+      "claim_boundary": "Pins Daira's governance, terminology, Sprout-risk, and NSM-question critique for the NU7 consensus poll.",
+      "does_not_prove": ["ZAP1 review", "ZAP1 endorsement", "retrogrant outcome", "ZIP 1243 acceptance"],
+      "scope_control": {
+        "public_locator": "https://forum.zcashcommunity.com/t/nu7-coinholder-vote/56912/7",
+        "api_locator": "https://forum.zcashcommunity.com/posts/252337.json",
+        "observed_at": "2026-08-13T23:35:41.8191095Z",
+        "response_body_bytes": 2332,
+        "response_body_sha256": "a2ddd9326e00833119ae30e020ec98917ab3680a3274f5e11894b67165473c18",
+        "selected_body_sha256": "0c3cde8102f8b065bc1a52c23e5cd03bee63db47bf2395f588b4b933d2adbbc8",
+        "selected_body_bytes": 327,
+        "boundary": "Josh Swihart's post explicitly distinguishes consensus sentiment polling from the coinholder vote and process used for retroactive grant funding. Do not transfer the consensus poll terminology ruling onto the retrogrant process."
+      }
+    },
+    {
+      "id": "daira-direct-zap1-zip-review",
+      "classification": "PUBLIC_PRIMARY_ATTRIBUTED",
+      "observed_at": "2026-08-13T23:41:24.5258882Z",
+      "public_locator": "https://github.com/zcash/zips/pull/1243#discussion_r3028252127",
+      "review_api": {
+        "locator": "https://api.github.com/repos/zcash/zips/pulls/1243/reviews/4050884730",
+        "observed_at": "2026-08-13T23:34:45.1233925Z",
+        "response_body_bytes": 1482,
+        "response_body_sha256": "8e7008eb08ceb051d54a930460e496d653aa3057ac2d5f628ba0f9c1f1bcb82c",
+        "state": "COMMENTED",
+        "submitted_at": "2026-04-02T14:03:11Z"
+      },
+      "line_comment_api": {
+        "locator": "https://api.github.com/repos/zcash/zips/pulls/comments/3028252127",
+        "response_body_bytes": 6097,
+        "response_body_sha256": "aac544efcd14c4b95e0ac6bebd63f7f422744d412413af72b18c3da5529aab2d",
+        "selected_body_bytes": 190,
+        "selected_body_sha256": "6832c37b36baf545d6909d9cdb493a3530578b3017d9a377a9767eed5f79a86c",
+        "author": "daira",
+        "author_association": "COLLABORATOR",
+        "created_at": "2026-04-02T14:03:12Z",
+        "updated_at": "2026-04-02T14:03:12Z",
+        "path": "zips/draft-frontiercompute-zap1.md",
+        "commit": "6634cce1ada6c8b1440afd4f6f0d6271e1df5cce"
+      },
+      "current_head_corroboration": {
+        "observed_at": "2026-08-13T23:34:45.1233925Z",
+        "locator": "https://raw.githubusercontent.com/Zk-nd3r/zips/0537ce5606e1e1700b1278285cdceef8ffbd8397/zips/draft-frontiercompute-zap1.md",
+        "response_body_bytes": 13547,
+        "response_body_sha256": "43b70f1e60d74ff24b151977508a8d37ef341b7595cf57d055dbab23c6232afe",
+        "observed_field": "bytes 78..n is named label"
+      },
+      "claim_boundary": "Proves that Daira left a terminology comment. The current field name is consistent with incorporating that feedback.",
+      "does_not_prove": ["Daira approval", "review approval", "ZIP editor acceptance", "merge", "standardization", "adoption"]
+    },
+    {
+      "id": "zip-1243-latest-state",
+      "classification": "PUBLIC_PRIMARY_MUTABLE",
+      "observed_at": "2026-08-13T23:34:45.1233925Z",
+      "public_locator": "https://github.com/zcash/zips/pull/1243",
+      "api_locator": "https://api.github.com/repos/zcash/zips/pulls/1243",
+      "response_body_bytes": 15519,
+      "response_body_sha256": "cf0f96718c89335ff29003cc9563bf47540894a2edc9497bbcf0821bb748f55a",
+      "state": {
+        "open": true,
+        "draft": true,
+        "merged": false,
+        "mergeable": true,
+        "mergeable_state": "unstable",
+        "head_sha": "0537ce5606e1e1700b1278285cdceef8ffbd8397",
+        "updated_at": "2026-07-29T21:49:54Z"
+      },
+      "applicant_self_review": {
+        "observed_at": "2026-08-13T23:41:11.9401755Z",
+        "public_locator": "https://github.com/zcash/zips/pull/1243#issuecomment-5123710072",
+        "api_locator": "https://api.github.com/repos/zcash/zips/issues/comments/5123710072",
+        "response_body_bytes": 2120,
+        "response_body_sha256": "4069efa677f8340715ca41a655aafd23a71be7c8bbb146cc318f0aeeff9b342d",
+        "selected_body_bytes": 518,
+        "selected_body_sha256": "21fb60ad347012c3c2c8c36d4b3bcef7bf039865ee95604afda67ba3eda6b20c",
+        "created_at": "2026-07-29T21:48:21Z",
+        "updated_at": "2026-07-29T21:48:21Z",
+        "boundary": "The applicant explicitly records unresolved wire-format and registry divergence and returns the PR to draft pending byte-exact profiles and vectors."
+      },
+      "claim_boundary": "Proves only the mutable pull-request state and the applicant's explicit draft limitation at the observation times.",
+      "does_not_prove": ["one coherent standard wire profile", "ZIP number assignment", "ZIP acceptance", "merge", "ecosystem adoption"],
+      "reopen_trigger": "Any present-tense ZIP state claim requires a fresh PR and head-byte read."
+    },
+    {
+      "id": "zooko-bounded-negative-search",
+      "classification": "PUBLIC_NEGATIVE_EVIDENCE_BOUNDED",
+      "observed_at": "2026-08-13T23:36:45.4522004Z",
+      "search_space": [
+        {
+          "locator": "https://api.github.com/search/issues?q=ZAP1%20commenter%3Azooko&per_page=100",
+          "response_body_bytes": 79,
+          "response_body_sha256": "c9938edecb99d754b2d039ac9eec320a94c769b6a6417921e2dcbef9e2fe01a0",
+          "result": {"total_count": 0}
+        },
+        {
+          "locator": "https://forum.zcashcommunity.com/t/retroactive-grant-application-zap1-attestation-protocol-and-verification-tooling/55664.json",
+          "response_body_bytes": 76742,
+          "response_body_sha256": "190dcf7c2732169fc447ec802e8a3218aa2b0b905e2eae362f59319af53e1c92",
+          "result": {"post_authors": ["zk_nd3r", "zk_nd3r", "zk_nd3r"]}
+        },
+        {
+          "locator": "https://forum.zcashcommunity.com/post_action_users.json?id=247293&post_action_type_id=2",
+          "response_body_bytes": 563,
+          "response_body_sha256": "4bbf01404ee67fa540fbdb5e0ab6640f9425cd3c6632a7a3b7d83fbd70e8d3f8",
+          "result": {"like_users": ["dismad", "jenkin", "sangsoo"]}
+        },
+        {
+          "locator": "https://forum.zcashcommunity.com/post_action_users.json?id=247746&post_action_type_id=2",
+          "response_body_bytes": 227,
+          "response_body_sha256": "6071f6e6b916e4953c1370598b4f03a98961b18b1feaebb3b5ed2380090e357f",
+          "result": {"like_users": ["Olisehgenesis"]}
+        },
+        {
+          "locator": "https://forum.zcashcommunity.com/post_action_users.json?id=252646&post_action_type_id=2",
+          "response_body_bytes": 210,
+          "response_body_sha256": "6a66b2a1affe51cfeba7e2c6b2731432300e172960ed194be313e91b802f15e8",
+          "result": {"like_users": ["hard-nett"]}
+        }
+      ],
+      "claim_boundary": "No direct Zooko ZAP1 comment was returned by the exact GitHub query, and no Zooko post or like appeared on the three-post forum topic at observed_at.",
+      "does_not_prove": ["absence from the whole internet", "absence from private channels", "absence under another account", "Zooko endorsement", "Zooko opposition"],
+      "non_authorization": "Use Zooko only as an internal privacy and claim-discipline lens. Do not claim or imply Zooko endorsement."
+    }
+  ],
+  "global_non_authorizations": [
+    "No Zooko endorsement claim.",
+    "No Daira approval claim.",
+    "No ZIP 1243 acceptance, assignment, merge, or adoption claim.",
+    "No ZCG technical endorsement, award, or payout claim.",
+    "No inference that ready for vote means likely to win.",
+    "No inference that the public ledger proves every payment or non-payment fact.",
+    "No ZAP1 booked cash or hard receivable above $0."
+  ],
+  "reopen_triggers": [
+    "Any source body, state, label, comment, forum version, disbursement row, PR state, or ZIP head changes.",
+    "A reviewer, administrator, Daira, Zooko, or ZIP editor supplies new contradictory primary evidence.",
+    "A grant vote, award, settlement, or primary ZAP1 payment receipt appears.",
+    "A public claim exceeds any claim_boundary in this file."
+  ]
+}

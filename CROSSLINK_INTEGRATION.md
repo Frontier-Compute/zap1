@@ -1,121 +1,39 @@
-# ZAP1 Crosslink Integration
+# ZAP1 Crosslink integration sketch
 
-How ZAP1 attestation works with Crosslink proof-of-stake validators.
+Status: experimental, no consensus integration
 
-## Background
+The write API accepts `STAKING_DEPOSIT`, `STAKING_WITHDRAW`, and
+`STAKING_REWARD`. These events record what the ZAP1 operator submitted. They do
+not query or validate Crosslink state.
 
-Crosslink introduces proof-of-stake to Zcash. Validators lock ZEC as collateral, produce blocks, and earn rewards. Three lifecycle events need attestation:
+Example operator claim:
 
-1. A validator deposits stake
-2. A validator withdraws stake
-3. A validator receives a reward
-
-ZAP1 already has event types for these: STAKING_DEPOSIT (0x0A), STAKING_WITHDRAW (0x0B), STAKING_REWARD (0x0C). They're reserved in the spec and implemented in the API as of v3.0.0.
-
-## Event types
-
-### STAKING_DEPOSIT (0x0A)
-
-Records a stake lock. Hash construction:
-
-```
-leaf = BLAKE2b-256(
-  personalization: "NordicShield_",
-  input: 0x0A || len(wallet_hash) || wallet_hash || amount_zat(8 bytes) || len(validator_id) || validator_id
-)
-```
-
-API:
 ```json
 POST /event
 {
   "event_type": "STAKING_DEPOSIT",
-  "wallet_hash": "validator_public_key_hash",
+  "wallet_hash": "validator-subject-commitment",
   "amount_zat": 100000000,
-  "validator_id": "crosslink-validator-001"
+  "validator_id": "validator-001"
 }
 ```
 
-### STAKING_WITHDRAW (0x0B)
+The exact leaf is:
 
-Records a stake unlock. Same hash construction as deposit with type byte 0x0B.
-
-API:
-```json
-POST /event
-{
-  "event_type": "STAKING_WITHDRAW",
-  "wallet_hash": "validator_public_key_hash",
-  "amount_zat": 100000000,
-  "validator_id": "crosslink-validator-001"
-}
-```
-
-### STAKING_REWARD (0x0C)
-
-Records a block reward. Hash construction:
-
-```
-leaf = BLAKE2b-256(
-  personalization: "NordicShield_",
-  input: 0x0C || len(wallet_hash) || wallet_hash || amount_zat(8 bytes) || epoch(4 bytes)
+```text
+BLAKE2b_32(
+  0x0A ||
+  len(wallet_hash) || wallet_hash ||
+  amount_zat_be_u64 ||
+  len(validator_id) || validator_id
 )
 ```
 
-API:
-```json
-POST /event
-{
-  "event_type": "STAKING_REWARD",
-  "wallet_hash": "validator_public_key_hash",
-  "amount_zat": 312500,
-  "epoch": 1
-}
-```
+The withdrawal shape changes only the type byte to `0x0B`. The reward shape
+uses type `0x0C`, the length-prefixed wallet field, an eight-byte amount, and a
+four-byte epoch.
 
-## Why attestation matters for validators
-
-Staking creates accountability. A validator that deposits 10 ZEC, runs for 6 months, and earns rewards has a provable track record. The Merkle tree records:
-
-- When they deposited (timestamp in leaf)
-- How much they deposited (amount in hash)
-- Every reward they earned (one leaf per epoch)
-- When they withdrew (if ever)
-
-This history is anchored to Zcash mainnet. Anyone with the leaf hashes can verify the full timeline without trusting the validator or any operator.
-
-## Integration pattern
-
-A Crosslink validator runs a ZAP1 instance alongside their validator node. On each lifecycle event:
-
-1. Validator software calls `POST /event` with the event type and parameters
-2. ZAP1 hashes the event and adds a leaf to the Merkle tree
-3. When the threshold is reached, the tree root is anchored on-chain
-4. The validator publishes their leaf hashes as proof of their staking history
-
-This is the same pattern used for mining deployments today. The event types change, the protocol stays the same.
-
-## Verification
-
-```bash
-# Check a staking deposit proof
-curl -s https://your-zap1-instance/verify/LEAF_HASH/check
-
-# Get the full Merkle proof bundle
-curl -s https://your-zap1-instance/verify/LEAF_HASH/proof.json
-
-# Verify locally with the SDK
-cargo add zap1-verify
-```
-
-The `zap1-verify` crate walks the Merkle proof path from leaf to root and confirms the root matches an on-chain anchor. Works in Rust, WASM (browser), and via the REST API.
-
-## What this does NOT do
-
-- Does not interact with Crosslink consensus. ZAP1 is application-layer, not consensus-layer.
-- Does not validate that a staking deposit actually happened on-chain. It attests that the operator recorded it. Trust in the attestation depends on trust in the operator.
-- Does not replace slashing. Crosslink will have its own slashing mechanism. ZAP1 provides an independent audit trail alongside it.
-
-## Timeline
-
-The staking event types are implemented and available in the API now. They can be tested against the live stack at api.frontiercompute.cash. When Crosslink launches, validators can start attesting immediately - no protocol changes needed.
+A proof can establish inclusion of the submitted claim under a supplied root.
+It cannot establish that stake moved, a reward was earned, the event stream is
+complete, or the operator is a validator. Any production integration must bind
+these fields to a finalized consensus source and publish that verifier policy.

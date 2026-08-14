@@ -376,7 +376,7 @@ async fn handle_status(db: &Db) -> String {
         "ZAP1 Protocol\n\n\
          {} leaves, {} anchors, {} unanchored\n\
          Next anchor: ~{} leaves to go\n\
-         18 event types deployed",
+         18 event types defined (15 write API, 3 system-managed)",
         leaves,
         anchors,
         unanchored,

@@ -17,6 +17,7 @@ def classify_memo(hex_bytes: str) -> dict:
     req = urllib.request.Request(
         f"{API}/memo/decode",
         data=hex_bytes.encode(),
+        headers={"Accept": "application/json", "Content-Type": "text/plain"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -40,9 +41,9 @@ def main():
     if fmt == "zap1":
         print(f"  event: {result['event_label']}")
         print(f"  payload: {result['payload_hash'][:16]}...")
-        print(f"  verify: {API}/verify/{result['payload_hash']}")
+        print("  payload hash: claimed memo payload, not a public leaf receipt")
         print()
-        print("wallet UI: show attestation badge in transaction detail")
+        print("wallet UI: show claimed ZAP1 memo type in transaction detail")
 
     elif fmt == "text":
         print(f"  text: {result['text']}")

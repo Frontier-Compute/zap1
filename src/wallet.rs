@@ -38,7 +38,6 @@ use zcash_primitives::transaction::{Authorization, TransactionData, TxDigests, T
 use zcash_protocol::value::ZatBalance;
 
 use crate::config::Config;
-use crate::db::Db;
 use crate::frost_signer::{FrostSigner, SigningMode};
 use crate::memo::merkle_root_memo;
 use crate::merkle::decode_hash;
@@ -173,12 +172,12 @@ impl AnchorWallet {
         })
     }
 
-    /// Configure FROST threshold signing mode.
+    /// Configure the experimental co-located FROST compatibility mode.
     ///
     /// Verifies that the FROST group verifying key matches the wallet's
-    /// SpendValidatingKey (ak). If they diverge, FROST signing would produce
-    /// invalid spend-auth signatures, so we fall back to single-key mode.
-    pub fn set_frost_signer(&mut self, signer: FrostSigner) {
+    /// SpendValidatingKey (ak). A mismatch is a startup error: threshold mode
+    /// must never silently degrade to the single-key signer.
+    pub fn set_frost_signer(&mut self, signer: FrostSigner) -> Result<()> {
         // Extract ak (SpendValidatingKey) from the first 32 bytes of the FVK.
         let fvk_bytes = self.fvk.to_bytes();
         let ak_bytes: [u8; 32] = fvk_bytes[..32].try_into().expect("ak is 32 bytes");
@@ -187,18 +186,17 @@ impl AnchorWallet {
         let gvk_bytes: [u8; 32] = signer.group_verifying_key().serialize();
 
         if ak_bytes != gvk_bytes {
-            tracing::error!(
-                "FROST group_verifying_key does not match wallet SpendValidatingKey (ak). \
-                 Falling back to single-key signing. ak={} gvk={}",
-                hex::encode(ak_bytes),
-                hex::encode(gvk_bytes),
+            anyhow::bail!(
+                "FROST group verifying key does not match wallet SpendValidatingKey (ak)"
             );
-            return;
         }
 
         self.frost_signer = Some(signer);
         self.signing_mode = SigningMode::FrostThreshold;
-        tracing::info!("Anchor wallet: FROST threshold signing enabled (group key matches ak)");
+        tracing::info!(
+            "Anchor wallet: experimental co-located FROST enabled; no independent custody (group key matches ak)"
+        );
+        Ok(())
     }
 
     /// Current signing mode.
@@ -487,13 +485,10 @@ impl AnchorWallet {
         &self,
         params: &P,
         config: &Config,
-        db: &Db,
+        root_hash: &str,
         target_height: u32,
     ) -> Result<(String, String, Position)> {
-        let root = db
-            .current_merkle_root()?
-            .ok_or_else(|| anyhow::anyhow!("No Merkle root to anchor"))?;
-        let root_bytes = decode_hash(&root.root_hash)?;
+        let root_bytes = decode_hash(root_hash)?;
         let memo_str = merkle_root_memo(&root_bytes).encode();
         let memo = MemoBytes::from_bytes(memo_str.as_bytes())
             .map_err(|_| anyhow::anyhow!("Memo too long"))?;
@@ -586,10 +581,10 @@ impl AnchorWallet {
         // FROST threshold mode: use PCZT flow to access alpha for
         // rerandomized spend authorization signatures.
         if self.signing_mode == SigningMode::FrostThreshold {
-            if let Some(ref frost) = self.frost_signer {
-                return self
-                    .build_anchor_tx_frost(builder, frost, params, config, &fee_rule, position);
-            }
+            let frost = self.frost_signer.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("threshold signing selected without a FROST signer")
+            })?;
+            return self.build_anchor_tx_frost(builder, frost, params, config, &fee_rule, position);
         }
 
         // Single-key path: standard build with SpendAuthorizingKey.
@@ -626,7 +621,7 @@ impl AnchorWallet {
         Ok((tx_hex, txid, position))
     }
 
-    /// Build an anchor transaction using FROST threshold signing via the PCZT flow.
+    /// Build an anchor transaction using the experimental co-located FROST path via PCZT.
     ///
     /// PCZT (Partially Created Zcash Transaction) pipeline:
     ///   1. builder.build_for_pczt() -> PcztParts with orchard::pczt::Bundle
@@ -897,6 +892,20 @@ impl AnchorWallet {
             .find(|n| !n.spent && n.position == position)
             .ok_or_else(|| {
                 anyhow::anyhow!("No unspent note at position {}", u64::from(position))
+            })?;
+        tracked.spent = true;
+        Ok(())
+    }
+
+    /// Idempotent recovery variant for an exact transaction that was already
+    /// persisted in the anchor broadcast journal before it was sent.
+    pub fn ensure_spent_at_position(&self, position: Position) -> Result<()> {
+        let mut notes = self.notes.lock().unwrap();
+        let tracked = notes
+            .iter_mut()
+            .find(|note| note.position == position)
+            .ok_or_else(|| {
+                anyhow::anyhow!("No tracked note at position {}", u64::from(position))
             })?;
         tracked.spent = true;
         Ok(())

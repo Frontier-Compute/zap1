@@ -210,6 +210,12 @@ fn event_type_label(byte: u8) -> &'static str {
         0x0A => "STAKING_DEPOSIT",
         0x0B => "STAKING_WITHDRAW",
         0x0C => "STAKING_REWARD",
+        0x0D => "GOVERNANCE_PROPOSAL",
+        0x0E => "GOVERNANCE_VOTE",
+        0x0F => "GOVERNANCE_RESULT",
+        0x40 => "AGENT_REGISTER",
+        0x41 => "AGENT_POLICY",
+        0x42 => "AGENT_ACTION",
         _ => "UNKNOWN",
     }
 }
@@ -348,6 +354,12 @@ mod tests {
         assert_eq!(event_type_label(0x01), "PROGRAM_ENTRY");
         assert_eq!(event_type_label(0x09), "MERKLE_ROOT");
         assert_eq!(event_type_label(0x0C), "STAKING_REWARD");
+        assert_eq!(event_type_label(0x0D), "GOVERNANCE_PROPOSAL");
+        assert_eq!(event_type_label(0x0E), "GOVERNANCE_VOTE");
+        assert_eq!(event_type_label(0x0F), "GOVERNANCE_RESULT");
+        assert_eq!(event_type_label(0x40), "AGENT_REGISTER");
+        assert_eq!(event_type_label(0x41), "AGENT_POLICY");
+        assert_eq!(event_type_label(0x42), "AGENT_ACTION");
         assert_eq!(event_type_label(0xFF), "UNKNOWN");
     }
 

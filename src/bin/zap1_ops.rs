@@ -106,10 +106,10 @@ struct AnchorSummary {
     unanchored_leaves: u32,
     needs_anchor: bool,
     recommendation: String,
-    last_proofable_root: Option<String>,
-    last_proofable_txid: Option<String>,
-    last_proofable_height: Option<u32>,
-    last_proofable_at: Option<String>,
+    last_recorded_transaction_root: Option<String>,
+    last_recorded_transaction_txid: Option<String>,
+    last_recorded_transaction_height: Option<u32>,
+    last_recorded_transaction_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -360,7 +360,12 @@ fn evaluate(
         ));
     }
 
-    let last_proofable = anchor_history.anchors.last().cloned();
+    let last_recorded_transaction = anchor_history
+        .anchors
+        .iter()
+        .rev()
+        .find(|anchor| anchor.txid.is_some() && anchor.height.is_some())
+        .cloned();
     let status = if !errors.is_empty() {
         "critical"
     } else if !warnings.is_empty() {
@@ -392,12 +397,16 @@ fn evaluate(
             unanchored_leaves: anchor_status.unanchored_leaves,
             needs_anchor: anchor_status.needs_anchor,
             recommendation: anchor_status.recommendation.clone(),
-            last_proofable_root: last_proofable.as_ref().map(|anchor| anchor.root.clone()),
-            last_proofable_txid: last_proofable
+            last_recorded_transaction_root: last_recorded_transaction
+                .as_ref()
+                .map(|anchor| anchor.root.clone()),
+            last_recorded_transaction_txid: last_recorded_transaction
                 .as_ref()
                 .and_then(|anchor| anchor.txid.clone()),
-            last_proofable_height: last_proofable.as_ref().and_then(|anchor| anchor.height),
-            last_proofable_at: last_proofable
+            last_recorded_transaction_height: last_recorded_transaction
+                .as_ref()
+                .and_then(|anchor| anchor.height),
+            last_recorded_transaction_at: last_recorded_transaction
                 .as_ref()
                 .and_then(|anchor| parse_rfc3339_utc(&anchor.created_at)),
         },
@@ -438,16 +447,16 @@ fn print_text_report(report: &OpsReport) {
         report.anchors.needs_anchor,
     );
     println!(
-        "last proofable: root={} height={:?} txid={}",
+        "last recorded transaction reference: root={} height={:?} txid={}",
         report
             .anchors
-            .last_proofable_root
+            .last_recorded_transaction_root
             .as_deref()
             .unwrap_or("none"),
-        report.anchors.last_proofable_height,
+        report.anchors.last_recorded_transaction_height,
         report
             .anchors
-            .last_proofable_txid
+            .last_recorded_transaction_txid
             .as_deref()
             .unwrap_or("none"),
     );
@@ -575,7 +584,10 @@ mod tests {
         assert_eq!(report.status, "ok");
         assert!(report.errors.is_empty());
         assert!(report.warnings.is_empty());
-        assert_eq!(report.anchors.last_proofable_height, Some(3288022));
+        assert_eq!(
+            report.anchors.last_recorded_transaction_height,
+            Some(3288022)
+        );
     }
 
     #[test]

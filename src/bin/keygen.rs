@@ -1,7 +1,7 @@
-//! Generate a ZAP1 operator key set from a BIP39 mnemonic or random seed.
+//! Generate a ZAP1 operator key set from operating-system randomness.
 //!
-//! Outputs: mnemonic, UFVK, first unified address, and a .env block
-//! ready to paste into a deployment config.
+//! The spending seed is withheld unless the operator explicitly passes
+//! `--show-secret`.
 
 use anyhow::Result;
 use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
@@ -9,8 +9,16 @@ use zcash_protocol::consensus::{self, MainNetwork, TestNetwork};
 use zip32::AccountId;
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    let network = args.get(1).map(|s| s.as_str()).unwrap_or("mainnet");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let network = args.first().map(|s| s.as_str()).unwrap_or("mainnet");
+    let show_secret = args.iter().any(|arg| arg == "--show-secret");
+    if args
+        .iter()
+        .skip(1)
+        .any(|arg| arg.as_str() != "--show-secret")
+    {
+        anyhow::bail!("Usage: keygen [mainnet|testnet] [--show-secret]");
+    }
 
     // Generate 32 bytes of entropy
     let mut seed = [0u8; 32];
@@ -19,16 +27,21 @@ fn main() -> Result<()> {
     let account = AccountId::ZERO;
 
     match network {
-        "mainnet" => print_keys(&MainNetwork, &seed, account),
-        "testnet" => print_keys(&TestNetwork, &seed, account),
+        "mainnet" => print_keys(&MainNetwork, &seed, account, show_secret),
+        "testnet" => print_keys(&TestNetwork, &seed, account, show_secret),
         _ => {
-            eprintln!("Usage: keygen [mainnet|testnet]");
+            eprintln!("Usage: keygen [mainnet|testnet] [--show-secret]");
             std::process::exit(1);
         }
     }
 }
 
-fn print_keys<P: consensus::Parameters>(params: &P, seed: &[u8], account: AccountId) -> Result<()> {
+fn print_keys<P: consensus::Parameters>(
+    params: &P,
+    seed: &[u8],
+    account: AccountId,
+    show_secret: bool,
+) -> Result<()> {
     let usk = UnifiedSpendingKey::from_seed(params, seed, account)
         .map_err(|e| anyhow::anyhow!("Key derivation failed: {:?}", e))?;
 
@@ -51,11 +64,17 @@ fn print_keys<P: consensus::Parameters>(params: &P, seed: &[u8], account: Accoun
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
     );
     println!("#");
-    println!("# SAVE THIS SEED SECURELY. It cannot be recovered.");
-    println!("# The seed derives the spending key. The UFVK is for read-only scanning.");
-    println!();
-    println!("SEED={}", seed_hex);
-    println!();
+    if show_secret {
+        eprintln!("WARNING: emitting a spending seed to stdout by explicit request");
+        println!("# SAVE THIS SEED SECURELY. It cannot be recovered.");
+        println!("# The seed derives the spending key. The UFVK is for read-only scanning.");
+        println!();
+        println!("SEED={}", seed_hex);
+        println!();
+    } else {
+        println!("# Spending seed withheld. Use --show-secret only in a protected terminal.");
+        println!();
+    }
     println!("UFVK={}", ufvk_encoded);
     println!();
     println!("# First Orchard address (index 0):");

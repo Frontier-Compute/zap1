@@ -8,6 +8,11 @@ description = "ZAP1 structured memo protocol for Zcash. Reference implementation
 license = "MIT"
 repository = "https://github.com/Frontier-Compute/zap1"
 
+[workspace]
+members = ["zap1-verify", "zcash-memo-decode"]
+exclude = ["equivalence/rust"]
+resolver = "2"
+
 [[bin]]
 name = "anchor_root"
 path = "src/bin/anchor_root.rs"
@@ -58,6 +63,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
+base64 = "0.22"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 blake2b_simd = "1"
 
@@ -79,10 +85,10 @@ anyhow = "1"
 tokio-stream = "0.1"
 
 # ZAP1 verification SDK (vendored)
-zap1-verify = { path = "zap1-verify" }
+zap1-verify = { path = "zap1-verify", version = "0.3.0" }
 
-# Universal memo decoder
-zcash-memo-decode = "0.1.1"
+# Universal memo decoder (same source tree and lockfile as the server).
+zcash-memo-decode = { path = "zcash-memo-decode", version = "0.1.2" }
 rand_core = "0.6.4"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.2"

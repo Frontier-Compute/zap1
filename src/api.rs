@@ -7,6 +7,8 @@ use axum::{
 };
 use tower_http::cors::CorsLayer;
 
+const DEFAULT_HEALTH_MAX_SYNC_LAG_BLOCKS: u32 = 10;
+
 fn check_api_key(config: &Config, headers: &HeaderMap) -> Result<(), (StatusCode, String)> {
     check_api_key_with_db(config, headers, None)
 }
@@ -16,34 +18,63 @@ fn check_api_key_with_db(
     headers: &HeaderMap,
     db: Option<&crate::db::Db>,
 ) -> Result<(), (StatusCode, String)> {
-    if let Some(expected) = &config.api_key {
-        let provided = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "));
-        match provided {
-            Some(key) if key == expected => return Ok(()),
-            Some(key) => {
-                if let Some(db) = db {
-                    let hash = sha256_hex(key);
-                    if db.check_api_key_db(&hash).unwrap_or(false) {
-                        let _ = db.increment_api_key_usage(&hash);
-                        return Ok(());
-                    }
-                }
-                Err((
-                    StatusCode::UNAUTHORIZED,
-                    "Invalid or missing API key".to_string(),
-                ))
-            }
-            _ => Err((
-                StatusCode::UNAUTHORIZED,
-                "Invalid or missing API key".to_string(),
-            )),
-        }
-    } else {
-        Ok(())
+    let provided = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| !value.is_empty())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or missing API key".to_string(),
+        ))?;
+
+    if config
+        .api_key
+        .as_deref()
+        .is_some_and(|expected| constant_time_eq(provided.as_bytes(), expected.as_bytes()))
+    {
+        return Ok(());
     }
+
+    // A configured master authority is the explicit switch that permits the
+    // database-backed delegated-key plane. Missing API_KEY closes all writes,
+    // including legacy trial credentials.
+    if config.api_key.is_none() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Write API is disabled".to_string(),
+        ));
+    }
+
+    if let Some(db) = db {
+        let hash = sha256_hex(provided);
+        match db.consume_api_key_quota(&hash) {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(error) => {
+                tracing::error!("API-key quota check failed: {error:#}");
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "API-key validation unavailable".to_string(),
+                ));
+            }
+        }
+    }
+
+    Err((
+        StatusCode::UNAUTHORIZED,
+        "Invalid or missing API key".to_string(),
+    ))
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right)
+        .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
+        == 0
 }
 
 fn sha256_hex(input: &str) -> String {
@@ -66,6 +97,34 @@ fn generate_qr_svg(data: &str) -> String {
     }
 }
 
+pub(crate) fn zatoshi_amount(amount_zat: u64) -> String {
+    let whole = amount_zat / 100_000_000;
+    let fraction = amount_zat % 100_000_000;
+    if fraction == 0 {
+        whole.to_string()
+    } else {
+        let fraction = format!("{fraction:08}").trim_end_matches('0').to_string();
+        format!("{whole}.{fraction}")
+    }
+}
+
+fn zip321_uri(address: &str, amount_zat: u64, memo: &[u8]) -> String {
+    use base64::Engine;
+    let memo = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(memo);
+    format!(
+        "zcash:{address}?amount={}&memo={memo}",
+        zatoshi_amount(amount_zat)
+    )
+}
+
+fn invoice_payment_uri(address: &str, amount_zat: u64, invoice_short: &str) -> String {
+    zip321_uri(
+        address,
+        amount_zat,
+        format!("NS-{invoice_short}").as_bytes(),
+    )
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -73,15 +132,75 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
 }
+
+fn shorten_identifier(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 14 {
+        return value.to_string();
+    }
+    let start: String = chars.iter().take(8).collect();
+    let end: String = chars.iter().skip(chars.len().saturating_sub(6)).collect();
+    format!("{start}...{end}")
+}
+
+fn take_chars(value: &str, limit: usize) -> String {
+    value.chars().take(limit).collect()
+}
+
+fn validate_identifier(name: &str, value: &str) -> Result<(), (StatusCode, String)> {
+    if value.is_empty() || value.len() > 128 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{name} must be 1-128 bytes"),
+        ));
+    }
+    if !value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{name} must use only ASCII letters, digits, underscore, or hyphen"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_bounded_text(name: &str, value: &str) -> Result<(), (StatusCode, String)> {
+    if value.is_empty() || value.len() > 512 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{name} must be 1-512 UTF-8 bytes"),
+        ));
+    }
+    if value.chars().any(char::is_control) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{name} must not contain control characters"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_hex_digest(name: &str, value: &str) -> Result<(), (StatusCode, String)> {
+    if value.len() != 64 || !value.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{name} must be exactly 64 hexadecimal characters"),
+        ));
+    }
+    Ok(())
+}
 use serde::Deserialize;
 use std::sync::Arc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
 
 use crate::config::Config;
-use crate::db::Db;
+use crate::db::{canonical_anchor_hex, AnchorRecordConflict, Db};
 use crate::foreman::ForemanClient;
 use crate::keys::address_for_index_encoded;
+use crate::memo::MemoType;
 use crate::models::{CreateInvoiceRequest, HealthResponse, Invoice, InvoiceStatus};
 
 #[derive(Clone)]
@@ -97,6 +216,121 @@ const COUNT_BOUND_SCHEME: &str = "ZAP1_COUNT_BOUND_V2";
 const LEGACY_SCHEME: &str = "ZAP1_LEGACY_DUPLICATE_ODD";
 const INVALID_SCHEME: &str = "INVALID";
 const LEGACY_ROOT_MAX_ANCHOR_HEIGHT: u32 = 3_317_133;
+const PUBLIC_TYPED_LEAF_AUTHENTICATION: &str =
+    "unverified_server_metadata_without_disclosed_witness";
+
+const SYSTEM_MANAGED_EVENT_TYPES: [MemoType; 3] = [
+    MemoType::ProgramEntry,
+    MemoType::OwnershipAttest,
+    MemoType::MerkleRoot,
+];
+
+fn is_system_managed(memo_type: MemoType) -> bool {
+    SYSTEM_MANAGED_EVENT_TYPES.contains(&memo_type)
+}
+
+fn write_api_event_types() -> Vec<&'static str> {
+    MemoType::ALL
+        .iter()
+        .copied()
+        .filter(|memo_type| !is_system_managed(*memo_type))
+        .map(MemoType::label)
+        .collect()
+}
+
+fn public_stats_snapshot(
+    db_counts: &[(i32, i64)],
+) -> (
+    Vec<&'static str>,
+    serde_json::Map<String, serde_json::Value>,
+    i64,
+    i64,
+) {
+    let mut event_types = Vec::with_capacity(MemoType::ALL.len());
+    let mut type_counts = serde_json::Map::new();
+    let mut classified = 0_i64;
+
+    for memo_type in MemoType::ALL {
+        let id = i32::from(memo_type.as_u8());
+        let name = memo_type.label();
+        let count = db_counts
+            .iter()
+            .find(|(event_type, _)| *event_type == id)
+            .map(|(_, count)| *count)
+            .unwrap_or(0);
+        classified += count;
+        event_types.push(name);
+        type_counts.insert(name.to_string(), serde_json::json!(count));
+    }
+
+    let total: i64 = db_counts.iter().map(|(_, count)| *count).sum();
+    let unclassified = total.saturating_sub(classified);
+    if unclassified > 0 {
+        type_counts.insert("OTHER_UNKNOWN".to_string(), serde_json::json!(unclassified));
+    }
+
+    (event_types, type_counts, classified, unclassified)
+}
+
+fn anchor_recommendation(
+    needs_anchor: bool,
+    unanchored: u32,
+    threshold: u32,
+    broadcast_enabled: bool,
+    signer_configured: bool,
+) -> &'static str {
+    if !needs_anchor {
+        "up to date"
+    } else if !broadcast_enabled {
+        "anchoring paused; leaves staged for the next operator-authorized anchor run"
+    } else if !signer_configured {
+        "broadcast enabled but signer unavailable; no transaction can be sent"
+    } else if unanchored == 0 || unanchored >= threshold {
+        "eligible for the configured automatic anchor run"
+    } else {
+        "below the configured automatic anchor threshold"
+    }
+}
+
+fn protocol_metadata() -> serde_json::Value {
+    let defined_event_types: Vec<&str> = MemoType::ALL
+        .iter()
+        .map(|event_type| event_type.label())
+        .collect();
+    let write_api_event_types = write_api_event_types();
+    let system_managed_event_types: Vec<&str> = SYSTEM_MANAGED_EVENT_TYPES
+        .iter()
+        .map(|event_type| event_type.label())
+        .collect();
+
+    serde_json::json!({
+        "protocol": "ZAP1",
+        "version": PROTOCOL_VERSION,
+        "event_types": MemoType::ALL.len(),
+        "event_types_semantics": "deprecated alias for defined_types",
+        "deployed_types": write_api_event_types.len(),
+        "deployed_types_semantics": "deprecated alias for write_api_types",
+        "reserved_types": system_managed_event_types.len(),
+        "reserved_types_semantics": "deprecated legacy count; these are system-managed defined types, not reserved or unallocated codes",
+        "defined_types": MemoType::ALL.len(),
+        "defined_event_types": defined_event_types,
+        "write_api_types": write_api_event_types.len(),
+        "write_api_event_types": write_api_event_types,
+        "system_managed_types": system_managed_event_types.len(),
+        "system_managed_event_types": system_managed_event_types,
+        "hash_function": "BLAKE2b-256",
+        "leaf_personalization": "NordicShield_",
+        "node_personalization": "NordicShield_MRK",
+        "verification_sdk": "zap1-verify (Rust + WASM)",
+        "verification_sdk_repo": "https://github.com/Frontier-Compute/zap1/tree/main/zap1-verify",
+        "frost_status": "experimental_colocated_non_production",
+        "frost_ciphersuite": "FROST(Pallas, BLAKE2b-512)",
+        "frost_threshold": "2-of-3",
+        "frost_custody": "one process holds ANCHOR_SEED and two shares; no independent threshold custody",
+        "zip_status": "draft",
+        "specification": "https://github.com/Frontier-Compute/zap1/blob/main/ONCHAIN_PROTOCOL.md",
+    })
+}
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -173,16 +407,21 @@ fn anchor_range_label(first: Option<u32>, last: Option<u32>) -> String {
 async fn evidence_room(
     State(state): State<AppState>,
 ) -> Result<Html<String>, (StatusCode, String)> {
-    let (total_leaves, total_anchors, first_height, last_height) = state
+    let (_, total_anchors, first_height, last_height) = state
         .db
         .get_stats()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let network = format!("{:?}", state.config.network);
+    let db_counts = state
+        .db
+        .leaf_counts_by_type()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let total_leaves: i64 = db_counts.iter().map(|(_, count)| *count).sum();
     let page = include_str!("evidence_page.html")
         .replace("{TOTAL_ANCHORS}", &total_anchors.to_string())
         .replace("{TOTAL_LEAVES}", &total_leaves.to_string())
-        .replace("{EVENT_TYPES_TRACKED}", "9")
+        .replace("{EVENT_TYPES_TRACKED}", &MemoType::ALL.len().to_string())
         .replace("{NETWORK}", &html_escape(&network))
         .replace("{PROTOCOL_VERSION}", PROTOCOL_VERSION)
         .replace(
@@ -261,8 +500,10 @@ async fn create_invoice(
 
 async fn get_invoice(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<Invoice>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let invoice = state
         .db
         .get_invoice(&id)
@@ -283,8 +524,8 @@ async fn payment_page(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Invoice not found".to_string()))?;
 
-    let amount_zec = invoice.amount_zat as f64 / 100_000_000.0;
-    let received_zec = invoice.received_zat as f64 / 100_000_000.0;
+    let amount_zec = zatoshi_amount(invoice.amount_zat);
+    let received_zec = zatoshi_amount(invoice.received_zat);
 
     let status_color = match invoice.status {
         InvoiceStatus::Paid => "#3d9b8f",
@@ -306,7 +547,7 @@ async fn payment_page(
                 <div class="label">Payment Confirmed</div>
                 <div class="txid">{}</div>
             </div>"#,
-            invoice.paid_txid.as_deref().unwrap_or("confirming...")
+            html_escape(invoice.paid_txid.as_deref().unwrap_or("confirming..."))
         )
     } else {
         String::new()
@@ -331,19 +572,12 @@ async fn payment_page(
     let testnet_title = if is_testnet { " (Testnet)" } else { "" };
     let testnet_padding = if is_testnet { "padding-top:40px;" } else { "" };
 
-    let invoice_short = if invoice.id.len() >= 8 {
-        &invoice.id[..8]
-    } else {
-        &invoice.id
-    };
-    let zcash_uri = format!(
-        "zcash:{}?amount={:.4}&memo=NS-{}",
-        invoice.address, amount_zec, invoice_short
-    );
+    let invoice_short = take_chars(&invoice.id, 8);
+    let zcash_uri = invoice_payment_uri(&invoice.address, invoice.amount_zat, &invoice_short);
     let zcash_uri_short = if zcash_uri.len() > 60 {
         format!(
-            "zcash:{}...?amount={:.4}",
-            &invoice.address[..invoice.address.len().min(20)],
+            "zcash:{}...?amount={}",
+            take_chars(&invoice.address, 20),
             amount_zec
         )
     } else {
@@ -367,12 +601,12 @@ async fn payment_page(
                 String::new()
             },
         )
-        .replace("{AMOUNT_ZEC}", &format!("{:.4}", amount_zec))
+        .replace("{AMOUNT_ZEC}", &amount_zec)
         .replace(
             "{RECEIVED_LINE}",
             &if invoice.received_zat > 0 {
                 format!(
-                    "<div class=\"received\">Received: {:.4} ZEC</div>",
+                    "<div class=\"received\">Received: {} ZEC</div>",
                     received_zec
                 )
             } else {
@@ -380,24 +614,17 @@ async fn payment_page(
             },
         )
         .replace("{QR_SVG}", &generate_qr_svg(&zcash_uri))
-        .replace("{ZCASH_URI_RAW}", &zcash_uri)
-        .replace("{ZCASH_URI_SHORT}", &zcash_uri_short)
-        .replace("{ADDRESS}", &invoice.address)
+        .replace("{ZCASH_URI_RAW}", &html_escape(&zcash_uri))
+        .replace("{ZCASH_URI_SHORT}", &html_escape(&zcash_uri_short))
+        .replace("{ADDRESS}", &html_escape(&invoice.address))
         .replace("{PAID_INFO}", &paid_info)
-        .replace(
-            "{INVOICE_SHORT}",
-            if invoice.id.len() >= 8 {
-                &invoice.id[..8]
-            } else {
-                &invoice.id
-            },
-        )
+        .replace("{INVOICE_SHORT}", &html_escape(&invoice_short))
         .replace(
             "{EXPIRES_LINE}",
             &invoice
                 .expires_at
                 .as_deref()
-                .map(|e| format!("Expires: {}<br>", &e[..e.len().min(19)]))
+                .map(|e| format!("Expires: {}<br>", html_escape(&take_chars(e, 19))))
                 .unwrap_or_default(),
         )
         .replace("{REFRESH_SCRIPT}", refresh_script);
@@ -459,7 +686,8 @@ async fn health(
     };
 
     let sync_lag = chain_tip.saturating_sub(last_scanned);
-    let scanner_operational = rpc_reachable && chain_tip > 0 && sync_lag < 100;
+    let scanner_operational =
+        rpc_reachable && chain_tip > 0 && sync_lag <= DEFAULT_HEALTH_MAX_SYNC_LAG_BLOCKS;
 
     let network = format!("{:?}", state.config.network);
 
@@ -497,6 +725,17 @@ async fn anchor_status(
         None => ("none".to_string(), 0, None, None, false),
     };
 
+    let signer_configured =
+        state.config.anchor_seed.is_some() || state.config.anchor_zingo_cli.is_some();
+    let can_broadcast = state.config.anchor_enabled && signer_configured;
+    let recommendation = anchor_recommendation(
+        needs_anchor,
+        unanchored,
+        state.config.anchor_threshold,
+        state.config.anchor_enabled,
+        signer_configured,
+    );
+
     Ok(Json(serde_json::json!({
         "current_root": root_hash,
         "leaf_count": leaf_count,
@@ -504,15 +743,21 @@ async fn anchor_status(
         "last_anchor_txid": anchor_txid,
         "last_anchor_height": anchor_height,
         "needs_anchor": needs_anchor,
-        "anchor_threshold": 10,
-        "recommendation": if needs_anchor && unanchored == 0 { "anchor current root" } else if unanchored >= 10 { "anchor now" } else if unanchored > 0 { "anchor when convenient" } else { "up to date" },
+        "anchor_threshold": state.config.anchor_threshold,
+        "broadcast_enabled": state.config.anchor_enabled,
+        "signer_configured": signer_configured,
+        "can_broadcast": can_broadcast,
+        "recommendation": recommendation,
+        "transaction_reference_semantics": "A recorded txid proves transaction existence; binding an encrypted Orchard memo to this root requires a separate disclosure artifact.",
     })))
 }
 
 async fn miner_dashboard(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(wallet_hash): Path<String>,
 ) -> Result<Html<String>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let miners = state
         .db
         .get_miners_by_wallet_hash(&wallet_hash)
@@ -565,6 +810,10 @@ async fn miner_dashboard(
                     "--".into(),
                 )
             };
+        let serial = html_escape(serial);
+        let status = html_escape(&status);
+        let pool = html_escape(&pool);
+        let seen = html_escape(&seen);
 
         miners_html.push_str(&format!(
             r#"<div class="miner-card">
@@ -593,7 +842,7 @@ async fn miner_dashboard(
         billing_html.push_str(r#"<div style="color:#4a5168;font-size:12px;text-align:center;padding:16px">No invoices yet. Billing starts when your miner is deployed.</div>"#);
     } else {
         for inv in &invoices {
-            let amt = inv.amount_zat as f64 / 100_000_000.0;
+            let amt = zatoshi_amount(inv.amount_zat);
             let status_class = if inv.status == crate::models::InvoiceStatus::Paid {
                 "paid"
             } else {
@@ -601,14 +850,17 @@ async fn miner_dashboard(
             };
             let status_label = inv.status.as_str().to_uppercase();
             let pay_link = if inv.status != crate::models::InvoiceStatus::Paid {
-                format!(r#"<a class="pay-btn" href="/pay/{}">Pay</a>"#, inv.id)
+                format!(
+                    r#"<a class="pay-btn" href="/pay/{}">Pay</a>"#,
+                    html_escape(&inv.id)
+                )
             } else {
                 String::new()
             };
             let memo = html_escape(inv.memo.as_deref().unwrap_or(""));
             billing_html.push_str(&format!(
                 r#"<div class="invoice-row">
-  <div><div style="color:#e2e4e8">{:.4} ZEC</div><div style="color:#4a5168;font-size:9px;margin-top:2px">{memo}</div></div>
+  <div><div style="color:#e2e4e8">{} ZEC</div><div style="color:#4a5168;font-size:9px;margin-top:2px">{memo}</div></div>
   <div style="display:flex;align-items:center;gap:10px"><span class="invoice-status {status_class}">{status_label}</span>{pay_link}</div>
 </div>"#, amt
             ));
@@ -625,15 +877,7 @@ async fn miner_dashboard(
         ""
     };
     let testnet_title = if is_testnet { " (Testnet)" } else { "" };
-    let wallet_short = if wallet_hash.len() > 14 {
-        format!(
-            "{}...{}",
-            &wallet_hash[..wallet_hash.len().min(8)],
-            &wallet_hash[wallet_hash.len().saturating_sub(6)..]
-        )
-    } else {
-        wallet_hash.clone()
-    };
+    let wallet_short = html_escape(&shorten_identifier(&wallet_hash));
 
     // Cohort stats (compute first so we can use tier for revenue math)
     let total_machines = state.db.count_total_machines().unwrap_or(0);
@@ -652,31 +896,12 @@ async fn miner_dashboard(
     };
     let tier_progress = ((total_kw / 80.0) * 100.0).min(100.0) as u32;
 
-    // Revenue estimates - tier-aware
-    let num_miners = miners.len();
-    let hosting_per_machine = if at_discount_tier { 182.0 } else { 202.0 }; // ~$0.09 vs ~$0.10 effective
-    let zec_per_month = num_miners as f64 * 2.6;
-    let zec_per_year = zec_per_month * 12.0;
-    let hosting_monthly = num_miners as f64 * hosting_per_machine;
-    let total_3yr_cost =
-        (5499.0 * num_miners as f64) + (hosting_monthly * 36.0) + (299.0 * 2.0 * num_miners as f64);
-    let total_zec_3yr = zec_per_month * 36.0;
-    let cost_per_zec = if total_zec_3yr > 0.0 {
-        (total_3yr_cost / total_zec_3yr).round() as u32
-    } else {
-        0
-    };
-
     let html = include_str!("miner_page.html")
         .replace("{TESTNET_TITLE}", testnet_title)
         .replace("{TESTNET_BANNER}", testnet_banner)
         .replace("{WALLET_SHORT}", &wallet_short)
         .replace("{MINERS_HTML}", &miners_html)
         .replace("{BILLING_HTML}", &billing_html)
-        .replace("{ZEC_PER_MONTH}", &format!("{:.1}", zec_per_month))
-        .replace("{ZEC_PER_YEAR}", &format!("{:.0}", zec_per_year))
-        .replace("{COST_PER_ZEC}", &cost_per_zec.to_string())
-        .replace("{MONTHLY_HOSTING}", &format!("{:.0}", hosting_monthly))
         .replace("{TOTAL_MACHINES}", &total_machines.to_string())
         .replace("{CURRENT_TIER}", current_tier)
         .replace("{MACHINES_TO_NEXT}", &machines_to_next.to_string())
@@ -692,8 +917,10 @@ async fn miner_dashboard(
 
 async fn miner_status_json(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(wallet_hash): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let assignment = state
         .db
         .get_miner_by_wallet_hash(&wallet_hash)
@@ -733,6 +960,9 @@ async fn assign_miner(
     Json(req): Json<AssignMinerRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     check_api_key(&state.config, &headers)?;
+    validate_identifier("wallet_hash", &req.wallet_hash)?;
+    validate_bounded_text("wallet_address", &req.wallet_address)?;
+    validate_bounded_text("serial_number", &req.serial_number)?;
     state
         .db
         .assign_miner(
@@ -760,13 +990,14 @@ async fn assign_miner(
     ))
 }
 
-/// Viewing key verification endpoint.
-/// Provides the participant with information to independently verify
-/// their mining payouts without trusting our dashboard.
+/// Authenticated ownership-receipt lookup.
+/// This does not expose the program UFVK or prove mining payouts.
 async fn viewing_key_info(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(wallet_hash): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let miners = state
         .db
         .get_miners_by_wallet_hash(&wallet_hash)
@@ -791,8 +1022,8 @@ async fn viewing_key_info(
 
     Ok(Json(serde_json::json!({
         "wallet_hash": wallet_hash,
-        "verification_method": "On-chain cryptographic ownership attestation",
-        "note": "Each miner assignment is committed to a BLAKE2b Merkle tree anchored on Zcash. Use the verify links below to check your ownership proof independently.",
+        "verification_method": "Merkle inclusion with optional transaction reference",
+        "note": "Each assignment is an operator claim committed to a BLAKE2b Merkle tree. The verify links recompute inclusion in the supplied root. This does not prove assignment or payout. A listed txid proves transaction existence; binding an encrypted Orchard memo to that root requires a separate disclosure artifact.",
         "miners": miner_info,
     })))
 }
@@ -810,33 +1041,23 @@ async fn verify_page(
             "Verification record not found".to_string(),
         ))?;
 
-    let serial = bundle
-        .leaf
-        .serial_number
-        .as_deref()
-        .unwrap_or("Not assigned yet");
-    let wallet_short = if bundle.leaf.wallet_hash.len() > 14 {
-        format!(
-            "{}...{}",
-            &bundle.leaf.wallet_hash[..bundle.leaf.wallet_hash.len().min(8)],
-            &bundle.leaf.wallet_hash[bundle.leaf.wallet_hash.len().saturating_sub(6)..]
-        )
-    } else {
-        bundle.leaf.wallet_hash.clone()
-    };
-
-    let proof_json = serde_json::to_string_pretty(&bundle.proof)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let proof_json = html_escape(
+        &serde_json::to_string_pretty(&bundle.proof)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    );
     let event_label = bundle.leaf.event_type.label();
     let explorer_link = bundle
         .root
         .anchor_txid
         .as_deref()
         .map(|txid| {
-            if matches!(
-                state.config.network,
-                zcash_protocol::consensus::Network::MainNetwork
-            ) {
+            if txid.len() == 64
+                && txid.chars().all(|character| character.is_ascii_hexdigit())
+                && matches!(
+                    state.config.network,
+                    zcash_protocol::consensus::Network::MainNetwork
+                )
+            {
                 format!("https://blockchair.com/zcash/transaction/{txid}")
             } else {
                 String::new()
@@ -847,10 +1068,12 @@ async fn verify_page(
     let anchor_link = match bundle.root.anchor_txid.as_deref() {
         Some(txid) if !explorer_link.is_empty() => {
             format!(
-                r#"<a class="txid-link" href="{explorer_link}" target="_blank" rel="noopener noreferrer">{txid}</a>"#
+                r#"<a class="txid-link" href="{}" target="_blank" rel="noopener noreferrer">{}</a>"#,
+                html_escape(&explorer_link),
+                html_escape(txid)
             )
         }
-        Some(txid) => txid.to_string(),
+        Some(txid) => html_escape(txid),
         None => "Pending anchor".to_string(),
     };
     let anchor_height = bundle
@@ -860,20 +1083,18 @@ async fn verify_page(
         .unwrap_or_else(|| "Pending confirmation".to_string());
 
     let html = include_str!("verify_page.html")
-        .replace("{LEAF_HASH}", &bundle.leaf.leaf_hash)
+        .replace("{LEAF_HASH}", &html_escape(&bundle.leaf.leaf_hash))
         .replace("{EVENT_TYPE}", event_label)
-        .replace("{SERIAL}", serial)
-        .replace("{WALLET_SHORT}", &wallet_short)
-        .replace("{ROOT_HASH}", &bundle.root.root_hash)
+        .replace("{ROOT_HASH}", &html_escape(&bundle.root.root_hash))
         .replace("{LEAF_COUNT}", &bundle.root.leaf_count.to_string())
         .replace("{ANCHOR_TXID}", &anchor_link)
         .replace("{ANCHOR_HEIGHT}", &anchor_height)
         .replace("{PROOF_JSON}", &proof_json)
-        .replace("{LEAF_CREATED_AT}", &bundle.leaf.created_at)
-        .replace("{ROOT_CREATED_AT}", &bundle.root.created_at)
+        .replace("{LEAF_CREATED_AT}", &html_escape(&bundle.leaf.created_at))
+        .replace("{ROOT_CREATED_AT}", &html_escape(&bundle.root.created_at))
         .replace(
             "{VERIFY_NOTE}",
-            "This audit and commitment layer lets anyone verify without trusting the operator.",
+            "This page lets anyone recompute Merkle inclusion for the supplied leaf hash. Because the public receipt withholds the typed preimage, the claimed event type is not authenticated. This page also does not authenticate root publication, prove the underlying claim, or independently bind an encrypted memo to that root.",
         );
 
     Ok(Html(html))
@@ -900,10 +1121,10 @@ async fn proof_bundle_json(
         "version": "2",
         "leaf": {
             "hash": bundle.leaf.leaf_hash,
-            "event_type": bundle.leaf.event_type.label(),
-            "wallet_hash": bundle.leaf.wallet_hash,
-            "serial_number": bundle.leaf.serial_number,
-            "created_at": bundle.leaf.created_at,
+              "event_type": bundle.leaf.event_type.label(),
+              "created_at": bundle.leaf.created_at,
+              "preimage_disclosure": "withheld from the public proof bundle",
+              "event_type_authentication": PUBLIC_TYPED_LEAF_AUTHENTICATION,
         },
         "proof": proof_steps,
         "root": {
@@ -1017,14 +1238,20 @@ async fn verify_check(
         "legacy_accepted": merkle.legacy_allowed,
         "legacy_max_anchor_height": LEGACY_ROOT_MAX_ANCHOR_HEIGHT,
         "leaf_hash": bundle.leaf.leaf_hash,
-        "event_type": bundle.leaf.event_type.label(),
+          "event_type": bundle.leaf.event_type.label(),
+          "claimed_event_type": bundle.leaf.event_type.label(),
+          "event_type_authentication": PUBLIC_TYPED_LEAF_AUTHENTICATION,
+          "typed_leaf_verified": serde_json::Value::Null,
         "root": bundle.root.root_hash,
         "leaf_count": bundle.root.leaf_count,
         "anchor": {
             "txid": bundle.root.anchor_txid,
             "height": bundle.root.anchor_height,
         },
+        "merkle_valid": merkle.valid,
         "server_verified": merkle.valid,
+        "server_verified_semantics": "deprecated alias for merkle_valid; the server re-walked inclusion against the supplied root",
+        "verification_scope": "Merkle inclusion only. This result does not prove the underlying event, authenticate the operator, or bind an encrypted memo to the supplied root.",
         "verification_sdk": "zap1-verify",
     })))
 }
@@ -1070,10 +1297,11 @@ async fn anchor_history(
         "anchors": anchors,
         "total": total,
         "last_anchor_age_hours": last_anchor_age_hours,
+        "record_semantics": "Locally recorded root, transaction-id, and height mappings. Transaction existence is separately checkable; encrypted memo-to-root binding requires a disclosure artifact.",
     })))
 }
 
-/// Recent attestation events. Discoverable feed for explorers and indexers.
+/// Recent operator-issued event claims for explorers and indexers.
 async fn recent_events(
     State(state): State<AppState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
@@ -1096,29 +1324,29 @@ async fn recent_events(
                 "leaf_hash": l.leaf_hash,
                 "event_type": l.event_type.label(),
                 "description": match l.event_type.label() {
-                    "PROGRAM_ENTRY" => "Operator registration",
-                    "OWNERSHIP_ATTEST" => "Ownership attestation",
-                    "CONTRACT_ANCHOR" => "Contract hash anchored",
-                    "DEPLOYMENT" => "Hardware deployment",
-                    "HOSTING_PAYMENT" => "Hosting payment recorded",
-                    "SHIELD_RENEWAL" => "Shield renewed",
-                    "TRANSFER" => "Ownership transferred",
-                    "EXIT" => "Hardware decommissioned",
-                    "MERKLE_ROOT" => "Merkle root anchor",
-                    "STAKING_DEPOSIT" => "Staking deposit",
-                    "STAKING_WITHDRAW" => "Staking withdrawal",
-                    "STAKING_REWARD" => "Staking reward",
-                    "GOVERNANCE_PROPOSAL" => "Governance proposal",
-                    "GOVERNANCE_VOTE" => "Governance vote",
-                    "GOVERNANCE_RESULT" => "Governance result",
-                    "AGENT_REGISTER" => "Agent registered",
-                    "AGENT_POLICY" => "Agent policy committed",
-                    "AGENT_ACTION" => "Agent action attested",
+                    "PROGRAM_ENTRY" => "Claimed operator registration",
+                    "OWNERSHIP_ATTEST" => "Claimed ownership",
+                    "CONTRACT_ANCHOR" => "Claimed contract commitment",
+                    "DEPLOYMENT" => "Claimed hardware deployment",
+                    "HOSTING_PAYMENT" => "Claimed hosting payment",
+                    "SHIELD_RENEWAL" => "Claimed shield renewal",
+                    "TRANSFER" => "Claimed ownership transfer",
+                    "EXIT" => "Claimed hardware decommission",
+                    "MERKLE_ROOT" => "Merkle root record",
+                    "STAKING_DEPOSIT" => "Claimed staking deposit",
+                    "STAKING_WITHDRAW" => "Claimed staking withdrawal",
+                    "STAKING_REWARD" => "Claimed staking reward",
+                    "GOVERNANCE_PROPOSAL" => "Claimed governance proposal",
+                    "GOVERNANCE_VOTE" => "Claimed governance vote",
+                    "GOVERNANCE_RESULT" => "Claimed governance result",
+                    "AGENT_REGISTER" => "Claimed agent registration",
+                    "AGENT_POLICY" => "Claimed agent policy",
+                    "AGENT_ACTION" => "Claimed agent action",
                     _ => "Unknown event",
                 },
-                "wallet_hash": l.wallet_hash,
-                "serial_number": l.serial_number,
                 "created_at": l.created_at,
+                "preimage_disclosure": "withheld from the public event feed",
+                "event_type_authentication": PUBLIC_TYPED_LEAF_AUTHENTICATION,
                 "verify_url": format!("/verify/{}/check", l.leaf_hash),
                 "proof_url": format!("/verify/{}/proof.json", l.leaf_hash),
                 "badge_url": format!("/badge/leaf/{}", l.leaf_hash),
@@ -1135,23 +1363,7 @@ async fn recent_events(
 
 /// Protocol metadata for ecosystem discovery.
 async fn protocol_info() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "protocol": "ZAP1",
-        "version": PROTOCOL_VERSION,
-        "event_types": 18,
-        "deployed_types": 15,
-        "reserved_types": 3,
-        "hash_function": "BLAKE2b-256",
-        "leaf_personalization": "NordicShield_",
-        "node_personalization": "NordicShield_MRK",
-        "verification_sdk": "zap1-verify (Rust + WASM)",
-        "verification_sdk_repo": "https://github.com/Frontier-Compute/zap1-verify",
-        "frost_status": "design_complete",
-        "frost_ciphersuite": "FROST(Pallas, BLAKE2b-512)",
-        "frost_threshold": "2-of-3",
-        "zip_status": "draft",
-        "specification": "https://github.com/Frontier-Compute/zap1/blob/main/ONCHAIN_PROTOCOL.md",
-    }))
+    Json(protocol_metadata())
 }
 
 fn svg_badge(label: &str, value: &str, color: &str) -> String {
@@ -1208,19 +1420,18 @@ async fn badge_status(
     [(axum::http::header::HeaderName, &'static str); 2],
     String,
 ) {
-    let (leaves, anchors) = match (state.db.total_leaf_count(), state.db.all_anchored_roots()) {
+    let (value, color) = match (state.db.total_leaf_count(), state.db.all_anchored_roots()) {
         (Ok(l), Ok(roots)) => {
-            let anchor_count = roots.iter().filter(|r| r.anchor_txid.is_some()).count();
-            (l, anchor_count)
+            let record_count = roots.iter().filter(|r| r.anchor_txid.is_some()).count();
+            (
+                format!("{} leaves | {} tx records", l, record_count),
+                "#c8a84e",
+            )
         }
-        _ => (0, 0),
+        _ => ("status unavailable".to_string(), "#e05d44"),
     };
 
-    let svg = svg_badge(
-        "ZAP1",
-        &format!("{} leaves | {} anchors", leaves, anchors),
-        "#c8a84e",
-    );
+    let svg = svg_badge("ZAP1", &value, color);
 
     (
         StatusCode::OK,
@@ -1241,17 +1452,14 @@ async fn badge_leaf(
     [(axum::http::header::HeaderName, &'static str); 2],
     String,
 ) {
-    let exists = state
-        .db
-        .get_verification_bundle(&leaf_hash)
-        .ok()
-        .flatten()
-        .is_some();
-
-    let (value, color) = if exists {
-        ("verified", "#4c1")
-    } else {
-        ("not found", "#e05d44")
+    let (value, color) = match state.db.get_verification_bundle(&leaf_hash) {
+        Ok(Some(bundle)) => match verify_bundle_merkle(&bundle) {
+            Ok(check) if check.valid => ("Merkle match", "#4c1"),
+            Ok(_) => ("bundle invalid", "#e05d44"),
+            Err(_) => ("check failed", "#e05d44"),
+        },
+        Ok(None) => ("not found", "#e05d44"),
+        Err(_) => ("lookup failed", "#e05d44"),
     };
 
     let svg = svg_badge("ZAP1 leaf", value, color);
@@ -1302,10 +1510,10 @@ async fn badge_anchor(
 
     let (value, color) = match found {
         Some(r) => match r.anchor_height {
-            Some(h) => (format!("anchored at block {}", h), "#4c1".to_string()),
-            None => ("anchored (unconfirmed)".to_string(), "#c8a84e".to_string()),
+            Some(h) => (format!("recorded at block {}", h), "#c8a84e".to_string()),
+            None => ("recorded (unconfirmed)".to_string(), "#c8a84e".to_string()),
         },
-        None => ("anchor not found".to_string(), "#e05d44".to_string()),
+        None => ("record not found".to_string(), "#e05d44".to_string()),
     };
 
     let svg = svg_badge("ZAP1", &value, &color);
@@ -1324,7 +1532,15 @@ async fn badge_anchor(
 
 async fn create_trial_key(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    if !state.config.trial_key_issuance_enabled {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Trial-key issuance is disabled".to_string(),
+        ));
+    }
+    check_api_key(&state.config, &headers)?;
     state
         .db
         .create_api_keys_table()
@@ -1343,7 +1559,7 @@ async fn create_trial_key(
         .insert_api_key(&id, &key_hash, "trial", 5, Some(&expires))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    tracing::info!("Trial key issued: {}", &raw_key[..20]);
+    tracing::info!("Trial key issued: id={}", id);
 
     Ok((
         StatusCode::CREATED,
@@ -1356,24 +1572,102 @@ async fn create_trial_key(
     ))
 }
 
+fn parse_build_metadata(raw: &str) -> serde_json::Map<String, serde_json::Value> {
+    raw.lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| {
+            (
+                key.trim().to_string(),
+                serde_json::Value::String(value.trim().to_string()),
+            )
+        })
+        .collect()
+}
+
+fn metadata_bool(metadata: &serde_json::Map<String, serde_json::Value>, key: &str) -> bool {
+    metadata.get(key).and_then(|value| value.as_str()) == Some("true")
+}
+
+fn metadata_hex_len(
+    metadata: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    length: usize,
+) -> bool {
+    metadata
+        .get(key)
+        .and_then(|value| value.as_str())
+        .is_some_and(|value| {
+            value.len() == length && value.chars().all(|character| character.is_ascii_hexdigit())
+        })
+}
+
 async fn build_info() -> Json<serde_json::Value> {
-    let build_info = std::fs::read_to_string("/usr/local/share/zap1/BUILD_INFO")
-        .unwrap_or_else(|_| "not available (dev build)".to_string());
+    let raw = std::fs::read_to_string("/usr/local/share/zap1/BUILD_INFO").unwrap_or_default();
+    let metadata = parse_build_metadata(&raw);
+    let deployment_revision = metadata
+        .get("source_revision")
+        .and_then(|value| value.as_str());
+    let source_tree = metadata.get("source_tree").and_then(|value| value.as_str());
+    let source_manifest_sha256 = metadata
+        .get("source_manifest_sha256")
+        .and_then(|value| value.as_str());
+    let public_evidence_revision = metadata
+        .get("public_evidence_revision")
+        .and_then(|value| value.as_str());
+    let public_evidence_url = public_evidence_revision
+        .map(|revision| format!("https://github.com/Frontier-Compute/zap1/commit/{revision}"));
+    let cargo_locked = metadata_bool(&metadata, "cargo_locked");
+    let path_remapping = metadata_bool(&metadata, "path_remapping");
+    let source_manifest_verified = metadata_bool(&metadata, "source_manifest_verified");
+    let metadata_complete = metadata_hex_len(&metadata, "source_revision", 40)
+        && metadata_hex_len(&metadata, "source_tree", 40)
+        && metadata_hex_len(&metadata, "public_evidence_revision", 40)
+        && metadata_hex_len(&metadata, "source_manifest_sha256", 64)
+        && metadata_hex_len(&metadata, "cargo_lock_sha256", 64)
+        && metadata_hex_len(&metadata, "zap1_binary_sha256", 64);
+    let deployment_image_id = std::env::var("ZAP1_DEPLOYMENT_IMAGE_ID")
+        .ok()
+        .filter(|value| {
+            value.len() == 71
+                && value.starts_with("sha256:")
+                && value[7..].chars().all(|character| {
+                    character.is_ascii_hexdigit() && !character.is_ascii_uppercase()
+                })
+        });
+    let deployment_image_id_present = deployment_image_id.is_some();
+
     Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "librustzcash_rev": "1f736379a4099ef1ba3b3bff4035c725e28a018a",
-        "deterministic_build": {
-            "source_date_epoch": std::env::var("SOURCE_DATE_EPOCH").unwrap_or_else(|_| "unset".to_string()),
-            "path_remapping": true,
-            "cargo_lock": true,
-            "note": "Follows StageX/Zaino approach SOURCE_DATE_EPOCH eliminates timestamp non-determinism. RUSTFLAGS --remap-path-prefix strips build paths."
+        "deployment": {
+            "image_id": deployment_image_id,
+            "image_id_present": deployment_image_id_present,
+            "binding": "The deployment image ID is injected by the operator from docker image inspect and must be matched to the external build and deployment receipt. It is a deployment declaration, not remote attestation."
+        },
+        "source": {
+            "deployment_revision": deployment_revision,
+            "source_tree": source_tree,
+            "source_manifest_sha256": source_manifest_sha256,
+            "source_manifest_verified": source_manifest_verified,
+            "public_evidence_revision": public_evidence_revision,
+            "public_evidence_url": public_evidence_url,
+            "parity_scope": "The source manifest is recomputed from runtime-source bytes inside the image. Revision and Git tree identifiers are declarations derived by the clean-archive build driver and require the external build receipt for commit binding; bit-for-bit equality is not asserted."
+        },
+        "build_assurance": {
+            "metadata_available": !metadata.is_empty(),
+            "metadata_complete": metadata_complete,
+            "path_remapping": path_remapping,
+            "cargo_locked": cargo_locked,
+            "source_manifest_verified": source_manifest_verified,
+            "bit_for_bit_reproduction": "not asserted",
+            "note": "The image verifies its runtime-source manifest and records declared revision/tree, lockfile, toolchain, and artifact hashes. The external clean-archive build receipt binds the declared Git identifiers; an independent matching reproduction is a separate evidence step."
         },
         "supply_chain": {
             "dependency_pinning": "git rev (Cargo.toml [patch.crates-io])",
             "lock_file": "Cargo.lock committed",
-            "verification": "cargo build --locked reproduces the same binary given the same toolchain"
+            "verification": "the image build fails unless Cargo.lock is present and cargo build --locked succeeds"
         },
-        "build_metadata": build_info.trim(),
+        "build_metadata": metadata,
     }))
 }
 
@@ -1477,21 +1771,50 @@ async fn create_lifecycle_event(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     check_api_key_with_db(&state.config, &headers, Some(&state.db))?;
 
-    // Validate wallet_hash: 1-128 chars, alphanumeric + underscore + hyphen
-    if req.wallet_hash.is_empty() || req.wallet_hash.len() > 128 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "wallet_hash must be 1-128 characters".to_string(),
-        ));
+    validate_identifier("wallet_hash", &req.wallet_hash)?;
+    if let Some(value) = req.new_wallet_hash.as_deref() {
+        validate_identifier("new_wallet_hash", value)?;
     }
-    if !req
-        .wallet_hash
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if let Some(value) = req.agent_id.as_deref() {
+        validate_identifier("agent_id", value)?;
+    }
+    for (name, value) in [
+        ("serial_number", req.serial_number.as_deref()),
+        ("facility_id", req.facility_id.as_deref()),
+        ("validator_id", req.validator_id.as_deref()),
+        ("proposal_id", req.proposal_id.as_deref()),
+        ("action_type", req.action_type.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_bounded_text(name, value)?;
+        }
+    }
+    for (name, value) in [
+        ("contract_sha256", req.contract_sha256.as_deref()),
+        ("proposal_hash", req.proposal_hash.as_deref()),
+        ("vote_commitment", req.vote_commitment.as_deref()),
+        ("result_hash", req.result_hash.as_deref()),
+        ("pubkey_hash", req.pubkey_hash.as_deref()),
+        ("model_hash", req.model_hash.as_deref()),
+        ("policy_hash", req.policy_hash.as_deref()),
+        ("rules_hash", req.rules_hash.as_deref()),
+        ("input_hash", req.input_hash.as_deref()),
+        ("output_hash", req.output_hash.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_hex_digest(name, value)?;
+        }
+    }
+
+    let is_agent_event = matches!(
+        req.event_type.as_str(),
+        "AGENT_REGISTER" | "AGENT_POLICY" | "AGENT_ACTION"
+    );
+    if is_agent_event && req.agent_id.as_deref() != Some(req.wallet_hash.as_str()) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "wallet_hash must be alphanumeric, underscore, or hyphen".to_string(),
+            "agent events require wallet_hash to equal agent_id so the stored and returned subject cannot diverge"
+                .to_string(),
         ));
     }
 
@@ -1549,6 +1872,9 @@ async fn create_lifecycle_event(
             let year = req
                 .year
                 .ok_or((StatusCode::BAD_REQUEST, "year required".into()))?;
+            if !(2020..=2100).contains(&year) {
+                return Err((StatusCode::BAD_REQUEST, "year must be 2020-2100".into()));
+            }
             state.db.insert_shield_renewal_leaf(&req.wallet_hash, year)
         }
         "TRANSFER" => {
@@ -1575,6 +1901,12 @@ async fn create_lifecycle_event(
             let amount = req
                 .amount_zat
                 .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            if !(1..=2_100_000_000_000_000).contains(&amount) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "amount_zat must be between 1 and the Zcash maximum supply".into(),
+                ));
+            }
             let validator = req
                 .validator_id
                 .as_deref()
@@ -1587,6 +1919,12 @@ async fn create_lifecycle_event(
             let amount = req
                 .amount_zat
                 .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            if !(1..=2_100_000_000_000_000).contains(&amount) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "amount_zat must be between 1 and the Zcash maximum supply".into(),
+                ));
+            }
             let validator = req
                 .validator_id
                 .as_deref()
@@ -1599,6 +1937,12 @@ async fn create_lifecycle_event(
             let amount = req
                 .amount_zat
                 .ok_or((StatusCode::BAD_REQUEST, "amount_zat required".into()))?;
+            if !(1..=2_100_000_000_000_000).contains(&amount) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "amount_zat must be between 1 and the Zcash maximum supply".into(),
+                ));
+            }
             let epoch = req
                 .epoch
                 .ok_or((StatusCode::BAD_REQUEST, "epoch required".into()))?;
@@ -1672,6 +2016,12 @@ async fn create_lifecycle_event(
             let pv = req
                 .policy_version
                 .ok_or((StatusCode::BAD_REQUEST, "policy_version required".into()))?;
+            if pv == 0 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "policy_version must be greater than zero".into(),
+                ));
+            }
             let rh = req
                 .rules_hash
                 .as_deref()
@@ -1706,10 +2056,14 @@ async fn create_lifecycle_event(
     }
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let subject_kind = if is_agent_event { "agent" } else { "wallet" };
+    let subject_id = req.agent_id.as_deref().unwrap_or(req.wallet_hash.as_str());
+
     tracing::info!(
-        "Lifecycle event {} for wallet {}",
+        "Lifecycle event {} for {} {}",
         req.event_type,
-        req.wallet_hash
+        subject_kind,
+        subject_id
     );
 
     Ok((
@@ -1718,6 +2072,8 @@ async fn create_lifecycle_event(
             "status": "created",
             "event_type": req.event_type,
             "wallet_hash": req.wallet_hash,
+            "subject_kind": subject_kind,
+            "subject_id": subject_id,
             "leaf_hash": leaf.leaf_hash,
             "root_hash": root.root_hash,
             "verify_url": format!("/verify/{}/check", leaf.leaf_hash),
@@ -1727,8 +2083,10 @@ async fn create_lifecycle_event(
 
 async fn lifecycle(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(wallet_hash): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    check_api_key(&state.config, &headers)?;
     let leaves = state
         .db
         .get_leaves_by_wallet(&wallet_hash)
@@ -1757,6 +2115,8 @@ async fn lifecycle(
                 "anchor_txid": anchor.as_ref().and_then(|a| a.anchor_txid.as_deref()),
                 "anchor_height": anchor.as_ref().and_then(|a| a.anchor_height),
                 "anchored": anchor.is_some(),
+                "anchored_semantics": "deprecated compatibility field: true means an API-recorded transaction reference covers this leaf",
+                "transaction_reference_recorded": anchor.is_some(),
                 "verify_url": format!("/verify/{}/check", leaf.leaf_hash),
             })
         })
@@ -1772,46 +2132,162 @@ async fn lifecycle(
 async fn stats(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let (total_leaves, total_anchors, first_height, last_height) = state
+    let (_, total_anchors, first_height, last_height) = state
         .db
         .get_stats()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let network = format!("{:?}", state.config.network);
 
-    let type_names = [
-        (1, "PROGRAM_ENTRY"),
-        (2, "OWNERSHIP_ATTEST"),
-        (3, "CONTRACT_ANCHOR"),
-        (4, "DEPLOYMENT"),
-        (5, "HOSTING_PAYMENT"),
-        (6, "SHIELD_RENEWAL"),
-        (7, "TRANSFER"),
-        (8, "EXIT"),
-        (9, "MERKLE_ROOT"),
-    ];
-
-    let db_counts = state.db.leaf_counts_by_type().unwrap_or_default();
-    let mut type_counts = serde_json::Map::new();
-    for (id, name) in &type_names {
-        let count = db_counts
-            .iter()
-            .find(|(t, _)| t == id)
-            .map(|(_, c)| *c)
-            .unwrap_or(0);
-        type_counts.insert(name.to_string(), serde_json::json!(count));
-    }
+    let db_counts = state
+        .db
+        .leaf_counts_by_type()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (event_types, type_counts, classified_leaves, unclassified_leaves) =
+        public_stats_snapshot(&db_counts);
+    let total_leaves: i64 = db_counts.iter().map(|(_, count)| *count).sum();
 
     Ok(Json(serde_json::json!({
         "total_leaves": total_leaves,
         "total_anchors": total_anchors,
+        "total_anchor_records": total_anchors,
+        "total_anchors_semantics": "deprecated compatibility field: locally recorded transaction references, not independent proof of encrypted memo contents",
         "first_anchor_block": first_height,
         "last_anchor_block": last_height,
         "network": network,
         "protocol": "ZAP1",
-        "event_types": type_names.iter().map(|(_, n)| n).collect::<Vec<_>>(),
+        "event_types": event_types,
         "type_counts": type_counts,
+        "classified_leaves": classified_leaves,
+        "unclassified_leaves": unclassified_leaves,
     })))
+}
+
+#[cfg(test)]
+mod evidence_surface_tests {
+    use super::{
+        anchor_recommendation, invoice_payment_uri, metadata_bool, metadata_hex_len,
+        parse_build_metadata, protocol_metadata, public_stats_snapshot, zip321_uri, MemoType,
+        SYSTEM_MANAGED_EVENT_TYPES,
+    };
+
+    #[test]
+    fn public_stats_include_every_defined_type_without_dropping_leaves() {
+        let db_counts = vec![
+            (0x03, 118),
+            (0x04, 4),
+            (0x08, 66),
+            (0x0a, 2),
+            (0x0d, 7),
+            (0x40, 48),
+            (0x42, 152),
+        ];
+        let (event_types, type_counts, classified, unclassified) =
+            public_stats_snapshot(&db_counts);
+
+        assert_eq!(event_types.len(), MemoType::ALL.len());
+        assert_eq!(type_counts["STAKING_DEPOSIT"], 2);
+        assert_eq!(type_counts["GOVERNANCE_PROPOSAL"], 7);
+        assert_eq!(type_counts["AGENT_REGISTER"], 48);
+        assert_eq!(type_counts["AGENT_ACTION"], 152);
+        assert_eq!(classified, 397);
+        assert_eq!(unclassified, 0);
+        let reported_total: i64 = type_counts
+            .values()
+            .map(|value| value.as_i64().unwrap())
+            .sum();
+        assert_eq!(reported_total, 397);
+    }
+
+    #[test]
+    fn public_stats_fail_visibly_into_other_unknown() {
+        let db_counts = vec![(0x01, 1), (0x7f, 2)];
+        let (event_types, type_counts, classified, unclassified) =
+            public_stats_snapshot(&db_counts);
+
+        assert_eq!(event_types.len(), MemoType::ALL.len());
+        assert!(!event_types.contains(&"OTHER_UNKNOWN"));
+        assert_eq!(type_counts["OTHER_UNKNOWN"], 2);
+        assert_eq!(classified, 1);
+        assert_eq!(unclassified, 2);
+        assert_eq!(
+            type_counts
+                .values()
+                .map(|value| value.as_i64().unwrap())
+                .sum::<i64>(),
+            3
+        );
+    }
+
+    #[test]
+    fn protocol_metadata_preserves_legacy_fields_with_explicit_semantics() {
+        let metadata = protocol_metadata();
+        assert_eq!(metadata["event_types"], 18);
+        assert_eq!(metadata["deployed_types"], 15);
+        assert_eq!(metadata["reserved_types"], 3);
+        assert_eq!(metadata["defined_types"], 18);
+        assert_eq!(metadata["write_api_types"], 15);
+        assert_eq!(metadata["system_managed_types"], 3);
+        assert_eq!(SYSTEM_MANAGED_EVENT_TYPES.len(), 3);
+        assert_eq!(
+            metadata["write_api_event_types"].as_array().unwrap().len(),
+            15
+        );
+    }
+
+    #[test]
+    fn paused_anchor_copy_wins_even_when_a_signer_is_present() {
+        assert_eq!(
+            anchor_recommendation(true, 150, 10, false, true),
+            "anchoring paused; leaves staged for the next operator-authorized anchor run"
+        );
+        assert_eq!(
+            anchor_recommendation(true, 150, 10, true, false),
+            "broadcast enabled but signer unavailable; no transaction can be sent"
+        );
+    }
+
+    #[test]
+    fn build_metadata_parser_preserves_machine_readable_identity_fields() {
+        let metadata = parse_build_metadata(
+            "source_revision=0123456789abcdef0123456789abcdef01234567\n\
+             cargo_locked=true\n\
+             rustc_version=rustc 1.85.1 (test)\n",
+        );
+        assert_eq!(
+            metadata["source_revision"],
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        assert_eq!(metadata["cargo_locked"], "true");
+        assert_eq!(metadata["rustc_version"], "rustc 1.85.1 (test)");
+        assert!(metadata_bool(&metadata, "cargo_locked"));
+        assert!(metadata_hex_len(&metadata, "source_revision", 40));
+        assert!(!metadata_bool(&metadata, "path_remapping"));
+        assert!(!metadata_hex_len(&metadata, "source_manifest_sha256", 64));
+    }
+
+    #[test]
+    fn zip321_uri_uses_configured_zatoshi_amount_and_base64url_memo() {
+        use base64::Engine;
+
+        let memo = b"ZAP1:09:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let uri = zip321_uri("u1test", 10_000, memo);
+        let expected_memo = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(memo);
+        assert_eq!(
+            uri,
+            format!("zcash:u1test?amount=0.0001&memo={expected_memo}")
+        );
+        assert!(!uri.contains(&hex::encode(memo)));
+    }
+
+    #[test]
+    fn invoice_uri_preserves_every_requested_zatoshi() {
+        use base64::Engine;
+
+        let uri = invoice_payment_uri("u1test", 100_004_999, "12345678");
+        let memo = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"NS-12345678");
+        assert_eq!(uri, format!("zcash:u1test?amount=1.00004999&memo={memo}"));
+    }
 }
 
 #[derive(Deserialize)]
@@ -1994,8 +2470,6 @@ async fn cohort_stats(
         "total_anchors": total_anchors,
         "first_anchor_block": first_height,
         "last_anchor_block": last_height,
-        "zec_per_month_per_machine": 2.6,
-        "estimated_total_zec_month": total_machines as f64 * 2.6,
     })))
 }
 
@@ -2170,32 +2644,13 @@ async fn memo_decode_endpoint(
     Ok(Json(result))
 }
 
-#[derive(Deserialize, Default)]
-struct AdminQuery {
-    key: Option<String>,
-}
-
 async fn admin_anchor_qr(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<AdminQuery>,
 ) -> Result<Html<String>, (StatusCode, String)> {
-    // Accept key via header OR query param for browser access
-    if let Some(expected) = &state.config.api_key {
-        let header_ok = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|k| k == expected)
-            .unwrap_or(false);
-        let query_ok = q.key.as_deref().map(|k| k == expected).unwrap_or(false);
-        if !header_ok && !query_ok {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                "Invalid or missing API key".into(),
-            ));
-        }
-    }
+    // Secrets in URLs leak through browser history, referrers, reverse-proxy
+    // logs, and screenshots. This endpoint accepts header auth only.
+    check_api_key(&state.config, &headers)?;
 
     let root = state
         .db
@@ -2213,14 +2668,22 @@ async fn admin_anchor_qr(
     ))?;
 
     let memo_text = format!("ZAP1:09:{}", root.root_hash);
-    let memo_hex = hex::encode(memo_text.as_bytes());
-    let uri = format!("zcash:{}?amount=0.0001&memo={}", addr, memo_hex);
+    let uri = zip321_uri(addr, state.config.anchor_amount_zat, memo_text.as_bytes());
     let qr_svg = generate_qr_svg(&uri);
+    let record_command = html_escape(&format!(
+        r#"curl -X POST http://127.0.0.1:3081/admin/anchor/record \
+  -H 'Authorization: Bearer <operator-key>' \
+  -H 'Content-Type: application/json' \
+  -d '{{"root":"{}","txid":"<64-hex-txid>","height":<confirmed-height>}}'"#,
+        root.root_hash
+    ));
 
-    let status = if root.anchor_txid.is_some() && unanchored == 0 {
-        "up to date"
+    let status = if root.anchor_txid.is_some() && root.anchor_height.is_some() && unanchored == 0 {
+        "transaction reference confirmed"
+    } else if root.anchor_txid.is_some() {
+        "transaction broadcast recorded, confirmation pending"
     } else {
-        "needs anchor"
+        "needs transaction reference"
     };
 
     let html = format!(
@@ -2234,9 +2697,7 @@ body {{ background:#0a0e17; color:#e2e4e8; font-family:monospace; display:flex; 
 .status {{ font-size:14px; color:{}; margin-bottom:16px; }}
 h1 {{ font-size:18px; margin-bottom:8px; }}
 .memo {{ background:#1a1e27; padding:12px; border-radius:4px; font-size:11px; margin:16px 0; word-break:break-all; }}
-form {{ margin-top:24px; display:flex; flex-direction:column; gap:8px; }}
-input {{ background:#1a1e27; border:1px solid #333; color:#e2e4e8; padding:8px; border-radius:4px; font-family:monospace; font-size:12px; }}
-button {{ background:#d4a843; color:#0a0e17; border:none; padding:10px 20px; border-radius:4px; font-weight:bold; cursor:pointer; }}
+pre {{ background:#1a1e27; border:1px solid #333; color:#e2e4e8; padding:12px; border-radius:4px; font-size:11px; max-width:760px; white-space:pre-wrap; word-break:break-word; }}
 </style></head><body>
 <h1>Anchor #{}</h1>
 <div class="status">{}</div>
@@ -2245,16 +2706,13 @@ button {{ background:#d4a843; color:#0a0e17; border:none; padding:10px 20px; bor
   <div>Root: {}</div>
   <div>Leaves: {} ({} unanchored)</div>
   <div class="memo">Memo: {}</div>
-  <div>Scan with Zodl. Send 0.0001 ZEC.</div>
+  <div>Scan with a ZIP-321-compatible wallet. Send {} ZEC.</div>
 </div>
-<form method="POST" action="/admin/anchor/record">
-  <input type="hidden" name="root" value="{}">
-  <input name="txid" placeholder="txid after send" required>
-  <input name="height" type="number" placeholder="block height" required>
-  <button type="submit">Record Anchor</button>
-</form>
+<p>After configured-node confirmation, record the transaction reference with header authentication.</p>
+<p>This checks transaction existence and height only. It does not open the encrypted memo or independently prove that the memo contains this root.</p>
+<pre>{}</pre>
 </body></html>"#,
-        if status == "up to date" {
+        if status == "transaction reference confirmed" {
             "#4caf50"
         } else {
             "#d4a843"
@@ -2266,14 +2724,15 @@ button {{ background:#d4a843; color:#0a0e17; border:none; padding:10px 20px; bor
         root.leaf_count,
         unanchored,
         html_escape(&memo_text),
-        root.root_hash,
+        zatoshi_amount(state.config.anchor_amount_zat),
+        record_command,
     );
 
     Ok(Html(html))
 }
 
 #[derive(Deserialize)]
-struct AnchorRecordForm {
+struct AnchorRecordRequest {
     root: String,
     txid: String,
     height: u32,
@@ -2282,24 +2741,94 @@ struct AnchorRecordForm {
 async fn admin_anchor_record(
     State(state): State<AppState>,
     headers: HeaderMap,
-    axum::extract::Form(form): axum::extract::Form<AnchorRecordForm>,
+    Json(form): Json<AnchorRecordRequest>,
 ) -> Result<Html<String>, (StatusCode, String)> {
     check_api_key(&state.config, &headers)?;
 
-    state
+    let root = canonical_anchor_hex(&form.root, "root")
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let txid = canonical_anchor_hex(&form.txid, "txid")
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    if form.height == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "height must be greater than zero".into(),
+        ));
+    }
+
+    let observed_height = transaction_height_from_zebra(&state.config.zebra_rpc_url, &txid)
+        .await
+        .map_err(|error| {
+            tracing::warn!("Manual anchor transaction lookup failed: {error:#}");
+            (
+                StatusCode::BAD_GATEWAY,
+                "Unable to verify the transaction against the configured Zebra node".to_string(),
+            )
+        })?;
+    if observed_height != form.height {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "claimed height {} does not match configured-node height {}",
+                form.height, observed_height
+            ),
+        ));
+    }
+
+    let reconciled_prepared = state
         .db
-        .record_merkle_anchor(&form.root, &form.txid, Some(form.height))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .record_confirmed_manual_anchor_reference(&root, &txid, form.height)
+        .map_err(|error| {
+            let status = if error.downcast_ref::<AnchorRecordConflict>().is_some() {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (status, error.to_string())
+        })?;
+    let recovery_note = if reconciled_prepared {
+        " The exact prepared transaction was reconciled. Embedded-wallet state finalization remains pending."
+    } else {
+        ""
+    };
 
     Ok(Html(format!(
         r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/admin/anchor/qr">
 <style>body {{ background:#0a0e17; color:#4caf50; font-family:monospace; display:flex; justify-content:center; align-items:center; height:100vh; }}</style>
 </head><body>
-<div>Anchor recorded. Root: {}...  Txid: {}...  Height: {}. Redirecting...</div>
+<div>Transaction reference recorded. Root: {}...  Txid: {}...  Height: {}. Configured-node confirmation does not prove encrypted memo contents or independent root binding.{} Redirecting...</div>
 </body></html>"#,
-        &form.root[..16],
-        &form.txid[..16],
+        &root[..16],
+        &txid[..16],
         form.height,
+        recovery_note,
     )))
+}
+
+async fn transaction_height_from_zebra(url: &str, txid: &str) -> anyhow::Result<u32> {
+    let response = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?
+        .post(url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getrawtransaction",
+            "params": [txid, 1],
+        }))
+        .send()
+        .await?
+        .error_for_status()?;
+    let body: serde_json::Value = response.json().await?;
+    if let Some(error) = body.get("error").filter(|error| !error.is_null()) {
+        anyhow::bail!("getrawtransaction RPC error: {error}");
+    }
+    body.get("result")
+        .and_then(|result| result.get("height"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|height| u32::try_from(height).ok())
+        .filter(|height| *height > 0)
+        .ok_or_else(|| anyhow::anyhow!("transaction is absent or unconfirmed"))
 }

@@ -1,277 +1,72 @@
-# ZAP1 CrossPay Attestation - Zodl Integration Guide
+# Zodl and CrossPay integration proposal
 
-## What this adds
+Status: unmerged proposal
 
-Every CrossPay swap gets a verifiable receipt anchored to Zcash mainnet.  The user can prove a swap happened without revealing source address, destination, or amount.  The proof is a Merkle leaf hash tied to a Zcash on-chain anchor transaction.
+This is a backend integration sketch. It is not shipped in Zodl or CrossPay.
+The Android [pull request](https://github.com/zodl-inc/zodl-android/pull/2173)
+and iOS [pull request](https://github.com/zodl-inc/zodl-ios/pull/1680) closed
+unmerged on 2026-07-29. The iOS
+[issue](https://github.com/zodl-inc/zodl-ios/issues/1670) remained open at the
+2026-08-13 cutoff. None of these receipts proves adoption, review approval, or
+production use.
 
-What the user sees: a "Verified" badge on swap history with a link to the proof page.  What the chain sees: a BLAKE2b hash in a Merkle tree, root committed via shielded memo.
+## Security boundary
 
-No PII on-chain.  No trust in Frontier Compute servers - the proof is independently verifiable from the Zcash blockchain.
+Never ship a ZAP1 write key in Android, iOS, browser, or other client code. A
+write key authorizes event creation. Keep it in the CrossPay backend, use a
+dedicated restricted key, and rotate it if exposed.
 
-## How it works
+Do not send raw wallet addresses, destination addresses, intent payloads, or
+other personal data to ZAP1. The API stores the strings it receives. The
+backend must derive domain-separated pseudonymous fields before submission and
+must retain any preimages under its own disclosure policy.
 
-1. CrossPay completes a swap via NEAR Intents
-2. The app posts a TRANSFER event to ZAP1 with the wallet hashes and intent TX ID
-3. ZAP1 returns a leaf hash and inserts it into the Merkle tree
-4. The Merkle root is periodically anchored to Zcash (every 10 events or 24h)
-5. The user can verify at `api.frontiercompute.cash/verify/{leaf_hash}`
+## Proposed backend call
 
-The TRANSFER event (type 0x07) is used because a CrossPay swap is an ownership transfer - value moves from shielded ZEC to a destination asset on another chain.  The NEAR Intent TX ID serves as the serial number binding the two sides.
+After the backend has independently confirmed a successful swap, it may record
+a `TRANSFER` claim:
 
-Hash construction: `BLAKE2b_32(0x07 || len(source_wallet_hash) || source_wallet_hash || len(dest_wallet_hash) || dest_wallet_hash || len(intent_txid) || intent_txid)` with `NordicShield_` personalization.
-
-## 3-line integration (TypeScript)
-
-```typescript
-import { CrossPayAttestation } from "@AnchorPay/zodl-crossPay-attestation";
-
-const zap1 = new CrossPayAttestation("https://api.frontiercompute.cash", API_KEY);
-
-const receipt = await zap1.attest(swapResult);
-```
-
-`receipt.leafHash` is the verifiable proof.  `receipt.verifyUrl` links to the proof page.
-
-## Full example
-
-```typescript
-import { CrossPayAttestation, CrossPaySwap } from "@AnchorPay/zodl-crossPay-attestation";
-
-const zap1 = new CrossPayAttestation("https://api.frontiercompute.cash", process.env.ZAP1_API_KEY!);
-
-// After CrossPay swap completes via NEAR Intents
-const swap: CrossPaySwap = {
-  sourceWalletHash: "a1b2c3...",   // BLAKE2b hash of the shielded z-addr or UA
-  destWalletHash: "d4e5f6...",     // BLAKE2b hash of destination address
-  sourceAsset: "ZEC",
-  destAsset: "USDC",
-  amountSourceZat: 100000000,      // 1 ZEC in zatoshis
-  amountDestSmallest: 28500000,    // 28.50 USDC in smallest unit
-  intentTxId: "near_intent_abc123",
-  route: "ZEC -> NEAR -> Base:USDC",
-  success: true,
-};
-
-const receipt = await zap1.attest(swap);
-
-console.log(receipt.leafHash);     // 64-char hex leaf hash
-console.log(receipt.verifyUrl);    // https://api.frontiercompute.cash/verify/{hash}
-
-// Verify later
-const check = await zap1.verify(receipt.leafHash);
-console.log(check.valid);          // true
-console.log(check.anchored);       // true after next Zcash anchor
-```
-
-## Failed swap attestation
-
-Failed swaps can also be attested.  This lets users prove they initiated a swap even if the intent did not resolve.
-
-```typescript
-const failedSwap: CrossPaySwap = {
-  sourceWalletHash: "a1b2c3...",
-  destWalletHash: "d4e5f6...",
-  sourceAsset: "ZEC",
-  destAsset: "ETH",
-  amountSourceZat: 50000000,
-  amountDestSmallest: 0,
-  intentTxId: "near_intent_xyz789",
-  route: "ZEC -> NEAR -> ETH",
-  success: false,
-  failureReason: "intent_timeout",
-};
-
-const receipt = await zap1.attestFailed(failedSwap);
-// serial_number is stored as "FAILED:near_intent_xyz789"
-```
-
-## Kotlin (Android)
-
-The memo parser is already available via PR [#2173](https://github.com/zodl-inc/zodl-android/pull/2173).  For CrossPay attestation, add the network call after swap completion.
-
-```kotlin
-// Post-swap attestation call
-suspend fun attestSwap(
-    sourceWalletHash: String,
-    destWalletHash: String,
-    intentTxId: String,
-    apiKey: String
-): String {
-    val url = URL("https://api.frontiercompute.cash/event")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.requestMethod = "POST"
-    conn.setRequestProperty("Content-Type", "application/json")
-    conn.setRequestProperty("Authorization", "Bearer $apiKey")
-    conn.doOutput = true
-
-    val body = """
-        {
-            "event_type": "TRANSFER",
-            "wallet_hash": "$sourceWalletHash",
-            "new_wallet_hash": "$destWalletHash",
-            "serial_number": "$intentTxId"
-        }
-    """.trimIndent()
-
-    conn.outputStream.bufferedWriter().use { it.write(body) }
-
-    if (conn.responseCode !in 200..299) {
-        val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
-        throw IOException("ZAP1 API returned ${conn.responseCode}: $err")
-    }
-
-    val response = conn.inputStream.bufferedReader().readText()
-    val json = JSONObject(response)
-    return json.getString("leaf_hash")
-}
-
-// Usage after CrossPay swap
-val leafHash = attestSwap(
-    sourceWalletHash = walletHash,
-    destWalletHash = destHash,
-    intentTxId = nearIntentTx.id,
-    apiKey = BuildConfig.ZAP1_API_KEY
-)
-
-// Display verification link
-val verifyUrl = "https://api.frontiercompute.cash/verify/$leafHash"
-```
-
-The existing `Zap1MemoFormatter` from the memo rendering PR will parse any ZAP1 memos the user receives, including TRANSFER events from CrossPay swaps.  See `contrib/zodl-android/Zap1MemoFormatter.kt`.
-
-## Swift (iOS)
-
-```swift
-func attestSwap(
-    sourceWalletHash: String,
-    destWalletHash: String,
-    intentTxId: String,
-    apiKey: String
-) async throws -> String {
-    let url = URL(string: "https://api.frontiercompute.cash/event")!
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-    let body: [String: Any] = [
-        "event_type": "TRANSFER",
-        "wallet_hash": sourceWalletHash,
-        "new_wallet_hash": destWalletHash,
-        "serial_number": intentTxId
-    ]
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse,
-          (200...299).contains(http.statusCode) else {
-        throw URLError(.badServerResponse)
-    }
-
-    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let leafHash = json["leaf_hash"] as? String else {
-        throw URLError(.cannotParseResponse)
-    }
-    return leafHash
-}
-
-// Usage
-let leafHash = try await attestSwap(
-    sourceWalletHash: walletHash,
-    destWalletHash: destHash,
-    intentTxId: nearIntentTx.id,
-    apiKey: Config.zap1ApiKey
-)
-
-let verifyUrl = "https://api.frontiercompute.cash/verify/\(leafHash)"
-```
-
-The existing `Zap1MemoParser` handles memo rendering.  See `contrib/zodl-ios/Zap1MemoParser.swift`.
-
-## API reference
-
-### POST /event
-
-Creates a TRANSFER attestation leaf.
-
-```
-POST https://api.frontiercompute.cash/event
-Authorization: Bearer {API_KEY}
+```http
+POST /event
+Authorization: Bearer <backend-only-key>
 Content-Type: application/json
 
 {
-    "event_type": "TRANSFER",
-    "wallet_hash": "{source_wallet_hash}",
-    "new_wallet_hash": "{dest_wallet_hash}",
-    "serial_number": "{near_intent_txid}"
+  "event_type": "TRANSFER",
+  "wallet_hash": "<domain-separated-source-commitment>",
+  "new_wallet_hash": "<domain-separated-destination-commitment>",
+  "serial_number": "<domain-separated-intent-commitment>"
 }
 ```
 
-Response (201):
+The active construction is:
 
-```json
-{
-    "status": "created",
-    "event_type": "TRANSFER",
-    "wallet_hash": "a1b2c3...",
-    "leaf_hash": "e7f8a9...64 hex chars",
-    "root_hash": "b3c4d5...64 hex chars",
-    "verify_url": "/verify/e7f8a9..."
-}
+```text
+BLAKE2b_32(
+  0x07 ||
+  len(old_wallet) || old_wallet ||
+  len(new_wallet) || new_wallet ||
+  len(serial_number) || serial_number
+)
 ```
 
-### GET /verify/{leaf_hash}/check
+All lengths are two-byte big-endian values. The leaf hash uses the
+`NordicShield_` personalization.
 
-Verify a leaf exists and is anchored.
+## What the receipt means
 
-```json
-{
-    "protocol": "ZAP1",
-    "valid": true,
-    "leaf_hash": "e7f8a9...",
-    "event_type": "TRANSFER",
-    "root": "b3c4d5...",
-    "server_verified": true
-}
-```
+The returned leaf hash identifies an operator-issued claim. Once a covering
+root exists, the proof path can show inclusion under that supplied root. This
+does not prove that a swap happened, that the fields are complete, or that the
+operator recorded every attempt. A recorded txid establishes transaction
+existence only. Encrypted memo binding requires separate disclosure material.
 
-### GET /verify/{leaf_hash}/proof.json
+Failed swaps should not be encoded as successful `TRANSFER` events. A distinct
+failure event is not assigned in the active registry.
 
-Full proof bundle with Merkle path, root, and anchor txid for independent verification.
+## Local references
 
-## Verification page
-
-Every leaf hash has a human-readable verification page at:
-
-```
-https://api.frontiercompute.cash/verify/{leaf_hash}
-```
-
-This page shows the leaf hash, event type, Merkle proof path, root hash, and the Zcash anchor transaction.  Users can share this URL as proof of swap.
-
-## What wallet hashes to use
-
-The `wallet_hash` fields must be BLAKE2b-256 hashes, not raw addresses.  This keeps addresses off the attestation layer.
-
-For shielded ZEC (source): hash the z-address or unified address the funds came from.  
-For the destination: hash the receiving address on the target chain.
-
-Use `NordicShield_` as the BLAKE2b personalization for consistency with ZAP1 hash construction.  Or use any deterministic hash - the important thing is that the same input always produces the same hash so the user can recompute it.
-
-## Links
-
-- Verify page: `https://api.frontiercompute.cash/verify/{leaf_hash}`
-- Protocol spec: [ONCHAIN_PROTOCOL.md](../ONCHAIN_PROTOCOL.md)
-- OpenAPI spec: [conformance/openapi.yaml](../conformance/openapi.yaml)
-- Memo rendering PR (Android): [zodl-inc/zodl-android#2173](https://github.com/zodl-inc/zodl-android/pull/2173)
-- Memo rendering issue (iOS): [zodl-inc/zodl-ios#1670](https://github.com/zodl-inc/zodl-ios/issues/1670)
-- TypeScript module: [zodl-crossPay-attestation.ts](./zodl-crossPay-attestation.ts)
-- npm: `@AnchorPay/zap1-verify` (verification SDK)
-- Android memo parser: [zodl-android/Zap1MemoFormatter.kt](./zodl-android/Zap1MemoFormatter.kt)
-- iOS memo parser: [zodl-ios/Zap1MemoParser.swift](./zodl-ios/Zap1MemoParser.swift)
-
-## API key
-
-Request an API key from zk_nd3r.  The key is passed as a Bearer token in the Authorization header.  Without it, POST /event returns 401.
-
-GET endpoints (verify, proof, stats) are public and require no auth.
+- [Protocol](../ONCHAIN_PROTOCOL.md)
+- [OpenAPI](../conformance/openapi.yaml)
+- [Android parser draft](zodl-android/Zap1MemoFormatter.kt)
+- [iOS parser draft](zodl-ios/Zap1MemoParser.swift)

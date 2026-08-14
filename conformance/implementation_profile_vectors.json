@@ -1,8 +1,8 @@
 {
-  "suite": "ZIP 1243 Conformance Vectors",
+  "suite": "ZAP1 Implementation Profile Vectors",
   "version": "1.0.0",
   "date": "2026-04-02",
-  "description": "Published test vectors for ZIP 1243 (ZAP1 Structured Attestation Protocol). Each vector maps to a specific MUST/SHOULD requirement in the ZIP draft.",
+  "description": "Published vectors for the behavior implemented by this repository. These vectors are not a ZIP 1243 conformance claim.",
   "leaf_hash_function": "BLAKE2b-256",
   "leaf_personalization": "NordicShield_",
   "leaf_personalization_padded_hex": "4e6f72646963536869656c645f000000",
@@ -13,111 +13,111 @@
   "root_personalization_hex": "4e6f72646963536869656c645f52544b",
 
   "section_1_memo_envelope": {
-    "requirement": "Binary payload layout and memo encoding (ZIP 1243 Section: Binary Payload Layout)",
+    "requirement": "Event registry and memo encoding used by this implementation",
     "vectors": [
       {
         "id": "1.1",
-        "description": "Type byte 0x01 is deployed (PROGRAM_ENTRY)",
+        "description": "Type byte 0x01 is defined and system-managed (PROGRAM_ENTRY)",
         "type_byte": 1,
-        "valid": true,
-        "deployed": true,
-        "reserved": false
+        "defined": true,
+        "write_api": false,
+        "system_managed": true
       },
       {
         "id": "1.2",
-        "description": "Type byte 0x09 is deployed (MERKLE_ROOT)",
+        "description": "Type byte 0x09 is defined and system-managed (MERKLE_ROOT)",
         "type_byte": 9,
-        "valid": true,
-        "deployed": true,
-        "reserved": false
+        "defined": true,
+        "write_api": false,
+        "system_managed": true
       },
       {
         "id": "1.3",
-        "description": "Type byte 0x0F is deployed (GOVERNANCE_RESULT)",
+        "description": "Type byte 0x0F is defined and accepted by the write API (GOVERNANCE_RESULT)",
         "type_byte": 15,
-        "valid": true,
-        "deployed": true,
-        "reserved": false
+        "defined": true,
+        "write_api": true,
+        "system_managed": false
       },
       {
         "id": "1.4",
-        "description": "Type byte 0x40 is deployed (AGENT_REGISTER)",
+        "description": "Type byte 0x40 is defined and accepted by the write API (AGENT_REGISTER)",
         "type_byte": 64,
-        "valid": true,
-        "deployed": true,
-        "reserved": false
+        "defined": true,
+        "write_api": true,
+        "system_managed": false
       },
       {
         "id": "1.5",
-        "description": "Type byte 0x42 is deployed (AGENT_ACTION)",
+        "description": "Type byte 0x42 is defined and accepted by the write API (AGENT_ACTION)",
         "type_byte": 66,
-        "valid": true,
-        "deployed": true,
-        "reserved": false
+        "defined": true,
+        "write_api": true,
+        "system_managed": false
       },
       {
         "id": "1.6",
-        "description": "Type byte 0x0A is allocated but reserved (STAKING_DEPOSIT)",
+        "description": "Type byte 0x0A is defined and accepted by the write API (experimental/legacy STAKING_DEPOSIT)",
         "type_byte": 10,
-        "valid": true,
-        "deployed": false,
-        "reserved": true
+        "defined": true,
+        "write_api": true,
+        "system_managed": false
       },
       {
         "id": "1.7",
-        "description": "Type byte 0x0C is allocated but reserved (STAKING_REWARD)",
+        "description": "Type byte 0x0C is defined and accepted by the write API (experimental/legacy STAKING_REWARD)",
         "type_byte": 12,
-        "valid": true,
-        "deployed": false,
-        "reserved": true
+        "defined": true,
+        "write_api": true,
+        "system_managed": false
       },
       {
         "id": "1.8",
-        "description": "Type byte 0x00 is invalid and unallocated",
+        "description": "Type byte 0x00 is invalid and unassigned",
         "type_byte": 0,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.9",
-        "description": "Type byte 0x10 is invalid (start of interior hole)",
+        "description": "Type byte 0x10 is unassigned (start of interior hole)",
         "type_byte": 16,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.10",
-        "description": "Type byte 0x3F is invalid (end of interior hole)",
+        "description": "Type byte 0x3F is unassigned (end of interior hole)",
         "type_byte": 63,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.11",
-        "description": "Type byte 0x43 is invalid (first byte after agent allocation)",
+        "description": "Type byte 0x43 is unassigned (first byte after agent definitions)",
         "type_byte": 67,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.12",
-        "description": "Type byte 0x45 is invalid despite the former range bound",
+        "description": "Type byte 0x45 is unassigned despite the former range bound",
         "type_byte": 69,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.13",
-        "description": "Type byte 0xFF is invalid and unallocated",
+        "description": "Type byte 0xFF is unassigned",
         "type_byte": 255,
-        "valid": false,
-        "deployed": false,
-        "reserved": false
+        "defined": false,
+        "write_api": false,
+        "system_managed": false
       },
       {
         "id": "1.14",
@@ -129,13 +129,7 @@
       },
       {
         "id": "1.15",
-        "description": "Binary payload layout version byte",
-        "version_byte": 1,
-        "comment": "First byte of binary layout MUST be 0x01"
-      },
-      {
-        "id": "1.16",
-        "description": "Integers MUST be big-endian",
+        "description": "Integer fields in hash preimages are big-endian",
         "value": 2026,
         "big_endian_u32_hex": "000007ea"
       }
@@ -143,7 +137,7 @@
   },
 
   "section_2_hash_construction": {
-    "requirement": "BLAKE2b-256 with NordicShield_ personalization (ZIP 1243 Section: Hash Construction)",
+    "requirement": "BLAKE2b-256 hash construction used by this implementation",
     "personalization_bytes": "NordicShield_",
     "personalization_length": 13,
     "personalization_padded_to_16": "NordicShield_\\x00\\x00\\x00",
@@ -301,12 +295,36 @@
         "construction": "BLAKE2b_32(0x0F || len(wallet_hash) || wallet_hash || len(proposal_id) || proposal_id || len(result_hash) || result_hash)",
         "input_fields": {"wallet_hash": "dao_op", "proposal_id": "prop-001", "result_hash": "tally_hash"},
         "expected_hash": "6f698f731247c2b6a50c46ba471b52e812837725ec6113a53cca6b649ce24ce1"
+      },
+      {
+        "id": "2.20",
+        "event_type": "AGENT_REGISTER",
+        "type_byte": "0x40",
+        "construction": "BLAKE2b_32(0x40 || len(agent_id) || agent_id || len(pubkey_hash) || pubkey_hash || len(model_hash) || model_hash || len(policy_hash) || policy_hash)",
+        "input_fields": {"agent_id": "agent_001", "pubkey_hash": "pubkey_hash_001", "model_hash": "model_hash_001", "policy_hash": "policy_hash_001"},
+        "expected_hash": "e3042e9891a9eb88fd4e8053189abe27707803bf81ae6caea4508c3d4bd7ebda"
+      },
+      {
+        "id": "2.21",
+        "event_type": "AGENT_POLICY",
+        "type_byte": "0x41",
+        "construction": "BLAKE2b_32(0x41 || len(agent_id) || agent_id || policy_version_be(u32) || len(rules_hash) || rules_hash)",
+        "input_fields": {"agent_id": "agent_001", "policy_version": 7, "rules_hash": "rules_hash_001"},
+        "expected_hash": "93686221f113a403eeeab7b15d7c5845fe9a9abb16d3ad0931d155c23b53a75a"
+      },
+      {
+        "id": "2.22",
+        "event_type": "AGENT_ACTION",
+        "type_byte": "0x42",
+        "construction": "BLAKE2b_32(0x42 || len(agent_id) || agent_id || len(action_type) || action_type || len(input_hash) || input_hash || len(output_hash) || output_hash)",
+        "input_fields": {"agent_id": "agent_001", "action_type": "tool_call", "input_hash": "input_hash_001", "output_hash": "output_hash_001"},
+        "expected_hash": "d68620ccc6de6957ab6b01fe8830ac64e2e2c455b80ce4506ef41078bcbb76f6"
       }
     ]
   },
 
   "section_3_merkle_tree": {
-    "requirement": "Binary Merkle tree with BLAKE2b-256 and NordicShield_MRK personalization (ZIP 1243 Section: Merkle Tree Commitments)",
+    "requirement": "Merkle construction used by this implementation",
     "vectors": [
       {
         "id": "3.1",
@@ -344,7 +362,7 @@
   },
 
   "section_4_anchor_memo": {
-    "requirement": "Anchor memo uses type 0x09, payload is raw 32-byte root (ZIP 1243 Section: On-Chain Anchoring)",
+    "requirement": "Anchor memo encoding used by this implementation",
     "vectors": [
       {
         "id": "4.1",
@@ -371,7 +389,7 @@
   },
 
   "section_5_verification": {
-    "requirement": "Merkle proof verification and proof bundle structure (ZIP 1243 Section: Verification Procedure)",
+    "requirement": "Merkle proof and proof-bundle structure used by this implementation",
     "vectors": [
       {
         "id": "5.1",
@@ -405,8 +423,8 @@
     ]
   },
 
-  "section_6_mainnet_reference": {
-    "requirement": "Historical cross-implementation validation against the pre-count-binding mainnet anchor",
+  "section_6_historical_fixture": {
+    "requirement": "Historical old-format fixture retained for reproducibility; this file does not check chain inclusion",
     "first_anchor": {
       "txid": "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a",
       "height": 3286631,

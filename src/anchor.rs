@@ -3,7 +3,7 @@
 //! Manages the lifecycle of Merkle root anchoring to Zcash mainnet:
 //! - Monitors unanchored leaf count and time since last anchor
 //! - Builds ZAP1:09 memo with current Merkle root
-//! - Broadcasts via zingo-cli (or future embedded tx builder)
+//! - Journals exact signed bytes before embedded-wallet broadcast
 //! - Implements exponential backoff on failure (5m, 10m, 20m, 40m, 60m cap)
 //! - Sends Signal + webhook notifications on success/failure
 //! - Confirms anchor height from Zebra RPC after broadcast
@@ -13,18 +13,22 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use incrementalmerkletree::Position;
 use tokio::time::{sleep, Duration};
 
 use crate::config::Config;
-use crate::db::Db;
-use crate::memo::merkle_root_memo;
-use crate::merkle::decode_hash;
+use crate::db::{AnchorBroadcastIntent, Db};
 use crate::wallet::AnchorWallet;
 
 /// Maximum consecutive failures before capping backoff.
 const MAX_BACKOFF_MINUTES: u64 = 60;
 /// Base backoff interval in minutes.
 const BASE_BACKOFF_MINUTES: u64 = 5;
+const RPC_CONNECT_TIMEOUT_SECS: u64 = 5;
+const RPC_TIMEOUT_SECS: u64 = 15;
+const CONFIRMATION_BATCH_LIMIT: u32 = 8;
+const BASE_CONFIRMATION_RETRY_SECS: u64 = 90;
+const MAX_CONFIRMATION_RETRY_SECS: u64 = 3_600;
 
 /// Anchor subsystem state.
 struct AnchorState {
@@ -55,38 +59,59 @@ impl AnchorState {
     }
 }
 
+fn anchor_automation_eligible(config: &Config, wallet_present: bool) -> bool {
+    config.anchor_enabled && wallet_present
+}
+
+pub(crate) fn anchor_due(
+    unanchored: u32,
+    threshold: u32,
+    hours_since_last_anchor: Option<i64>,
+    interval: u64,
+) -> bool {
+    unanchored >= threshold
+        || (unanchored > 0 && hours_since_last_anchor.is_some_and(|hours| hours >= interval as i64))
+}
+
 /// Run the anchor automation loop. Call from main alongside the scanner.
 pub async fn anchor_loop(config: Arc<Config>, db: Arc<Db>, wallet: Option<Arc<AnchorWallet>>) {
-    if !config.anchor_enabled && wallet.is_none() {
-        tracing::info!("Anchor automation disabled (no wallet and ANCHOR_ZINGO_CLI not set)");
-        return;
+    let automation_eligible = anchor_automation_eligible(&config, wallet.is_some());
+    if !config.anchor_enabled {
+        tracing::info!(
+            "Anchor broadcast disabled; durable confirmation reconciliation remains active"
+        );
+    } else if !automation_eligible {
+        tracing::error!(
+            "Anchor broadcast enabled without a validated embedded wallet; new broadcasts are blocked while confirmation reconciliation remains active"
+        );
+    } else {
+        tracing::info!(
+            "Anchor automation starting: threshold={} interval={}h",
+            config.anchor_threshold,
+            config.anchor_interval_hours
+        );
     }
-
-    tracing::info!(
-        "Anchor automation starting: threshold={} interval={}h",
-        config.anchor_threshold,
-        config.anchor_interval_hours
-    );
 
     let state = AnchorState::new();
     let check_interval = Duration::from_secs(60);
 
     loop {
-        sleep(check_interval).await;
+        if let Err(error) = reconcile_due_anchor_confirmations(&config, &db).await {
+            tracing::warn!("Anchor confirmation reconciliation error: {error:#}");
+        }
 
-        // Check backoff
-        {
+        if automation_eligible {
             let backoff = state.backoff_until.lock().await;
-            if let Some(until) = *backoff {
-                if Instant::now() < until {
-                    continue; // Still in backoff period
+            let in_backoff = backoff.is_some_and(|until| Instant::now() < until);
+            drop(backoff);
+            if !in_backoff {
+                if let Err(error) = maybe_anchor(&config, &db, &state, wallet.as_deref()).await {
+                    tracing::warn!("Anchor check error: {error:#}");
                 }
             }
         }
 
-        if let Err(e) = maybe_anchor(&config, &db, &state, wallet.as_deref()).await {
-            tracing::warn!("Anchor check error: {:#}", e);
-        }
+        sleep(check_interval).await;
     }
 }
 
@@ -97,83 +122,82 @@ async fn maybe_anchor(
     state: &AnchorState,
     wallet: Option<&AnchorWallet>,
 ) -> Result<()> {
+    let pending = db.pending_anchor_broadcast()?;
     let root = db.current_merkle_root()?;
     if root.is_none() {
         return Ok(());
     }
 
     let unanchored = db.unanchored_leaf_count()?;
-    let needs_anchor = match &root {
-        Some(r) => {
-            if r.anchor_txid.is_none() {
-                tracing::info!("Anchor trigger: unanchored root exists");
-                true
-            } else if unanchored == 0 {
-                false
-            } else if unanchored >= config.anchor_threshold {
-                tracing::info!(
-                    "Anchor trigger: {} unanchored leaves >= threshold {}",
-                    unanchored,
-                    config.anchor_threshold
-                );
-                true
-            } else {
-                let last_root_time = chrono::DateTime::parse_from_rfc3339(&r.created_at).ok();
-                if let Some(t) = last_root_time {
-                    let hours_since =
-                        (chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_hours();
-                    if hours_since >= config.anchor_interval_hours as i64 {
-                        tracing::info!(
-                            "Anchor trigger: {}h since last root, interval={}h",
-                            hours_since,
-                            config.anchor_interval_hours
-                        );
-                        true
+    let needs_anchor = pending.is_some()
+        || match &root {
+            Some(_) => {
+                if unanchored >= config.anchor_threshold {
+                    tracing::info!(
+                        "Anchor trigger: {} unanchored leaves >= threshold {}",
+                        unanchored,
+                        config.anchor_threshold
+                    );
+                    true
+                } else {
+                    let reference_time = db
+                        .anchor_interval_reference_created_at()?
+                        .as_deref()
+                        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok());
+                    if let Some(t) = reference_time {
+                        let hours_since =
+                            (chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_hours();
+                        if anchor_due(
+                            unanchored,
+                            config.anchor_threshold,
+                            Some(hours_since),
+                            config.anchor_interval_hours,
+                        ) {
+                            tracing::info!(
+                                "Anchor trigger: {}h since last root, interval={}h",
+                                hours_since,
+                                config.anchor_interval_hours
+                            );
+                            true
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     }
-                } else {
-                    false
                 }
             }
-        }
-        None => false,
-    };
+            None => false,
+        };
 
     if !needs_anchor {
         return Ok(());
     }
 
     match run_anchor(config, &**db, wallet).await {
-        Ok(txid) => {
+        Ok((txid, root_hash, leaf_count)) => {
             state.record_success();
-            tracing::info!("Anchor broadcast success: txid={}", txid);
+            tracing::info!("Anchor transaction broadcast recorded: txid={}", txid);
 
             // Signal notification
-            notify_success(config, unanchored, &txid).await;
+            notify_success(config, leaf_count as u32, &txid).await;
 
             // Webhook on success
             if let Some(ref webhook_url) = config.anchor_webhook_url {
-                let root_hash = root.map(|r| r.root_hash).unwrap_or_default();
                 webhook_event(
                     webhook_url,
-                    "anchor_confirmed",
+                    "anchor_broadcast_recorded",
                     &serde_json::json!({
                         "txid": txid,
                         "root": root_hash,
-                        "leaves": unanchored,
+                        "leaf_count": leaf_count,
                     }),
                 )
                 .await;
             }
 
-            // Spawn background confirmation checker
-            let db_arc = Arc::clone(db);
-            let txid_clone = txid.clone();
-            let zebra_url = config.zebra_rpc_url.clone();
-            tokio::spawn(async move {
-                confirm_anchor_height(&db_arc, &zebra_url, &txid_clone).await;
-            });
+            // Confirmation is reconciled from the durable journal by the main
+            // loop. Process restarts do not discard retry state.
         }
         Err(e) => {
             let backoff_minutes = state.record_failure();
@@ -216,119 +240,130 @@ async fn maybe_anchor(
     Ok(())
 }
 
-/// Execute the anchor broadcast via embedded wallet (primary) or zingo-cli (fallback).
-async fn run_anchor(config: &Config, db: &Db, wallet: Option<&AnchorWallet>) -> Result<String> {
-    // Primary path: embedded wallet
+/// Execute or resume one exact journaled embedded-wallet broadcast.
+async fn run_anchor(
+    config: &Config,
+    db: &Db,
+    wallet: Option<&AnchorWallet>,
+) -> Result<(String, String, usize)> {
+    if !config.anchor_enabled {
+        anyhow::bail!("anchor broadcast disabled by ANCHOR_BROADCAST_ENABLED");
+    }
+
     if let Some(w) = wallet {
-        let root = db
-            .current_merkle_root()?
-            .ok_or_else(|| anyhow::anyhow!("No Merkle root to anchor"))?;
+        let client = rpc_client()?;
+        let intent = if let Some(pending) = db.pending_anchor_broadcast()? {
+            tracing::warn!(
+                "Resuming exact journaled anchor transaction {} for root {}",
+                pending.txid,
+                pending.root_hash
+            );
+            pending
+        } else {
+            let root = db
+                .current_merkle_root()?
+                .ok_or_else(|| anyhow::anyhow!("No Merkle root to anchor"))?;
 
-        tracing::info!(
-            "Anchoring root {} ({} leaves) via embedded wallet",
-            root.root_hash,
-            root.leaf_count
-        );
+            tracing::info!(
+                "Anchoring root {} ({} leaves) via embedded wallet",
+                root.root_hash,
+                root.leaf_count
+            );
 
-        let height = get_chain_height(&config.zebra_rpc_url).await?;
-        let params = zcash_protocol::consensus::MainNetwork;
-        let (raw_hex, txid, spent_pos) = w.build_anchor_tx(&params, config, db, height)?;
+            let height = get_chain_height(&client, &config.zebra_rpc_url).await?;
+            let (raw_hex, txid, spent_pos) =
+                w.build_anchor_tx(&config.network, config, &root.root_hash, height)?;
+            let intent = AnchorBroadcastIntent {
+                txid,
+                root_hash: root.root_hash,
+                leaf_count: root.leaf_count,
+                raw_tx_hex: raw_hex,
+                spent_position: u64::from(spent_pos),
+            };
+            db.prepare_anchor_broadcast(&intent)?;
+            intent
+        };
 
-        // Broadcast via Zebra sendrawtransaction
-        let resp = reqwest::Client::new()
+        let resp = client
             .post(&config.zebra_rpc_url)
             .json(&serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "sendrawtransaction",
-                "params": [raw_hex]
+                "params": [&intent.raw_tx_hex]
             }))
             .send()
             .await
-            .context("Zebra sendrawtransaction request failed")?;
+            .context("Zebra sendrawtransaction request failed")?
+            .error_for_status()
+            .context("Zebra sendrawtransaction returned an HTTP error")?;
 
         let body: serde_json::Value = resp.json().await?;
-        if let Some(err) = body.get("error") {
-            return Err(anyhow::anyhow!("sendrawtransaction error: {}", err));
+        let broadcast_matches = body.get("error").filter(|error| !error.is_null()).is_none()
+            && body
+                .get("result")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|returned| returned.eq_ignore_ascii_case(&intent.txid));
+        if !broadcast_matches
+            && !transaction_known(&client, &config.zebra_rpc_url, &intent.txid).await?
+        {
+            let reason = format!("sendrawtransaction did not confirm exact txid: {body}");
+            db.record_anchor_broadcast_error(&intent.txid, &reason)?;
+            anyhow::bail!("{reason}");
         }
 
-        // Mark note as spent
-        w.mark_spent_at_position(spent_pos)?;
-
-        db.record_merkle_anchor(&root.root_hash, &txid, None)?;
-        tracing::info!("Anchor recorded: root={} txid={}", root.root_hash, txid);
-
-        return Ok(txid);
-    }
-
-    // Fallback: zingo-cli
-    let zingo_cli = config
-        .anchor_zingo_cli
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("No embedded wallet and ANCHOR_ZINGO_CLI not configured"))?;
-    let server = config
-        .anchor_server
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("ANCHOR_SERVER not configured"))?;
-    let data_dir = config
-        .anchor_data_dir
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("ANCHOR_DATA_DIR not configured"))?;
-    let to_address = config
-        .anchor_to_address
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("ANCHOR_TO_ADDRESS not configured"))?;
-
-    let root = db
-        .current_merkle_root()?
-        .ok_or_else(|| anyhow::anyhow!("No Merkle root to anchor"))?;
-    let root_bytes = decode_hash(&root.root_hash)?;
-    let memo = merkle_root_memo(&root_bytes).encode();
-
-    tracing::info!(
-        "Anchoring root {} ({} leaves) via zingo-cli",
-        root.root_hash,
-        root.leaf_count
-    );
-
-    // Use quicksend (syncs, proposes, and broadcasts in one step)
-    let send_output = tokio::process::Command::new(zingo_cli)
-        .args([
-            "--chain",
-            &config.anchor_chain,
-            "--server",
-            server,
-            "--data-dir",
-            data_dir,
-            "quicksend",
-            to_address,
-            &config.anchor_amount_zat.to_string(),
-            &memo,
-        ])
-        .output()
-        .await
-        .context("Failed to execute zingo-cli quicksend")?;
-
-    if !send_output.status.success() {
-        anyhow::bail!(
-            "zingo-cli quicksend failed: {}",
-            String::from_utf8_lossy(&send_output.stderr)
+        // Keep the journal prepared until both local wallet state and the
+        // immutable root mapping are durable. Any retry reuses these exact
+        // signed bytes and txid.
+        w.ensure_spent_at_position(Position::from(intent.spent_position))?;
+        db.finalize_anchor_broadcast(&intent.txid)?;
+        tracing::info!(
+            "Anchor recorded: root={} txid={}",
+            intent.root_hash,
+            intent.txid
         );
+
+        return Ok((intent.txid, intent.root_hash, intent.leaf_count));
     }
 
-    let stdout = String::from_utf8_lossy(&send_output.stdout);
-    let txid = extract_txid(&stdout)
-        .ok_or_else(|| anyhow::anyhow!("Could not extract txid from zingo-cli output"))?;
-
-    db.record_merkle_anchor(&root.root_hash, &txid, None)?;
-    tracing::info!("Anchor recorded: root={} txid={}", root.root_hash, txid);
-
-    Ok(txid)
+    anyhow::bail!(
+        "automatic zingo-cli quicksend is disabled because timeout and post-broadcast recovery cannot be made idempotent; use the operator-authorized manual QR flow"
+    )
 }
 
-/// Extract a 64-char hex txid from command output.
-async fn get_chain_height(zebra_url: &str) -> Result<u32> {
-    let client = reqwest::Client::new();
+#[cfg(test)]
+mod authority_tests {
+    use super::anchor_automation_eligible;
+    use crate::config::Config;
+
+    #[test]
+    fn signer_presence_never_enables_broadcast_by_itself() {
+        let mut config = Config::test_defaults();
+        config.anchor_seed = Some("test-only-seed-placeholder".to_string());
+        assert!(!anchor_automation_eligible(&config, true));
+
+        config.anchor_zingo_cli = Some("zingo-cli".to_string());
+        assert!(!anchor_automation_eligible(&config, false));
+    }
+
+    #[test]
+    fn explicit_gate_still_requires_a_signer_path() {
+        let mut config = Config::test_defaults();
+        config.anchor_enabled = true;
+        assert!(!anchor_automation_eligible(&config, false));
+        assert!(anchor_automation_eligible(&config, true));
+    }
+}
+
+fn rpc_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(RPC_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(RPC_TIMEOUT_SECS))
+        .build()
+        .context("failed to build bounded Zebra RPC client")
+}
+
+async fn get_chain_height(client: &reqwest::Client, zebra_url: &str) -> Result<u32> {
     let resp = client
         .post(zebra_url)
         .json(&serde_json::json!({
@@ -339,36 +374,81 @@ async fn get_chain_height(zebra_url: &str) -> Result<u32> {
         }))
         .send()
         .await
-        .context("getblockcount request failed")?;
+        .context("getblockcount request failed")?
+        .error_for_status()
+        .context("getblockcount returned an HTTP error")?;
     let body: serde_json::Value = resp.json().await?;
+    if let Some(error) = body.get("error").filter(|error| !error.is_null()) {
+        anyhow::bail!("getblockcount RPC error: {error}");
+    }
     body["result"]
         .as_u64()
-        .map(|h| h as u32)
+        .and_then(|height| u32::try_from(height).ok())
         .ok_or_else(|| anyhow::anyhow!("getblockcount returned no result"))
 }
 
-fn extract_txid(output: &str) -> Option<String> {
-    output
-        .split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ':')
-        .find(|token| token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()))
-        .map(|token| token.to_lowercase())
+async fn transaction_known(client: &reqwest::Client, url: &str, txid: &str) -> Result<bool> {
+    let response = client
+        .post(url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getrawtransaction",
+            "params": [txid, 0],
+        }))
+        .send()
+        .await
+        .context("getrawtransaction recovery request failed")?
+        .error_for_status()
+        .context("getrawtransaction recovery returned an HTTP error")?;
+    let body: serde_json::Value = response.json().await?;
+    Ok(body.get("error").filter(|error| !error.is_null()).is_none()
+        && !body
+            .get("result")
+            .unwrap_or(&serde_json::Value::Null)
+            .is_null())
 }
 
-/// Background task: poll Zebra RPC to confirm anchor height.
-async fn confirm_anchor_height(db: &Db, zebra_url: &str, txid: &str) {
-    let client = reqwest::Client::new();
-    for _ in 0..4 {
-        sleep(Duration::from_secs(90)).await;
-        if let Ok(height) = get_tx_height(&client, zebra_url, txid).await {
-            if let Err(e) = db.record_merkle_anchor_height(txid, height) {
-                tracing::warn!("Failed to record anchor height: {:#}", e);
-            } else {
-                tracing::info!("Anchor confirmed at height {}", height);
+fn confirmation_retry_seconds(attempts: u32) -> u64 {
+    let exponent = attempts.min(6);
+    BASE_CONFIRMATION_RETRY_SECS
+        .saturating_mul(1_u64 << exponent)
+        .min(MAX_CONFIRMATION_RETRY_SECS)
+}
+
+async fn reconcile_due_anchor_confirmations(config: &Config, db: &Db) -> Result<()> {
+    let due = db.due_anchor_confirmations(CONFIRMATION_BATCH_LIMIT)?;
+    if due.is_empty() {
+        return Ok(());
+    }
+
+    let client = rpc_client()?;
+    for confirmation in due {
+        match get_tx_height(&client, &config.zebra_rpc_url, &confirmation.txid).await {
+            Ok(height) => {
+                db.confirm_anchor_broadcast(&confirmation.txid, height)?;
+                tracing::info!(
+                    "Anchor transaction reference confirmed: txid={} height={}",
+                    confirmation.txid,
+                    height
+                );
             }
-            return;
+            Err(error) => {
+                let retry_seconds = confirmation_retry_seconds(confirmation.confirmation_attempts);
+                db.record_anchor_confirmation_retry(
+                    &confirmation.txid,
+                    &format!("{error:#}"),
+                    retry_seconds,
+                )?;
+                tracing::warn!(
+                    "Anchor confirmation pending for txid={}; retry in {}s: {error:#}",
+                    confirmation.txid,
+                    retry_seconds
+                );
+            }
         }
     }
-    tracing::warn!("Anchor {} not confirmed after 6 minutes", &txid[..16]);
+    Ok(())
 }
 
 async fn get_tx_height(client: &reqwest::Client, url: &str, txid: &str) -> Result<u32> {
@@ -378,18 +458,32 @@ async fn get_tx_height(client: &reqwest::Client, url: &str, txid: &str) -> Resul
         "method": "getrawtransaction",
         "params": [txid, 1],
     });
-    let resp: serde_json::Value = client.post(url).json(&body).send().await?.json().await?;
-    let height = resp["result"]["height"]
-        .as_u64()
-        .context("No height in tx")?;
-    Ok(height as u32)
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .context("getrawtransaction confirmation request failed")?
+        .error_for_status()
+        .context("getrawtransaction confirmation returned an HTTP error")?;
+    let response: serde_json::Value = response.json().await?;
+    if let Some(error) = response.get("error").filter(|error| !error.is_null()) {
+        anyhow::bail!("getrawtransaction RPC error: {error}");
+    }
+    response
+        .get("result")
+        .and_then(|result| result.get("height"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|height| u32::try_from(height).ok())
+        .filter(|height| *height > 0)
+        .context("transaction is absent or unconfirmed")
 }
 
 async fn notify_success(config: &Config, leaves: u32, txid: &str) {
     if let (Some(signal_url), Some(signal_number)) = (&config.signal_api_url, &config.signal_number)
     {
         let msg = format!(
-            "Merkle root anchored to Zcash\nLeaves: {}\nTxid: {}...",
+            "Anchor transaction broadcast recorded; confirmation pending\nLeaves: {}\nTxid: {}...",
             leaves,
             &txid[..16]
         );
@@ -438,38 +532,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extract_txid_from_output() {
-        let output = "Transaction submitted: abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-        let txid = extract_txid(output);
-        assert_eq!(
-            txid,
-            Some("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string())
-        );
-    }
-
-    #[test]
-    fn extract_txid_missing() {
-        assert_eq!(extract_txid("no txid here"), None);
-        assert_eq!(extract_txid("short: abcdef01"), None);
-        assert_eq!(extract_txid(""), None);
-    }
-
-    #[test]
-    fn extract_txid_mixed_output() {
-        let output = r#"
-            Syncing wallet...
-            Proposing transaction...
-            txid: "98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a"
-            Done.
-        "#;
-        let txid = extract_txid(output);
-        assert_eq!(
-            txid,
-            Some("98e1d6a01614c464c237f982d9dc2138c5f8aa08342f67b867a18a4ce998af9a".to_string())
-        );
-    }
-
-    #[test]
     fn backoff_calculation() {
         let state = AnchorState::new();
         assert_eq!(state.failure_count(), 0);
@@ -494,5 +556,23 @@ mod tests {
 
         state.record_success();
         assert_eq!(state.failure_count(), 0);
+    }
+
+    #[test]
+    fn threshold_and_interval_policy_never_treats_one_fresh_leaf_as_due() {
+        assert!(!anchor_due(0, 10, Some(100), 24));
+        assert!(!anchor_due(1, 10, Some(1), 24));
+        assert!(anchor_due(10, 10, Some(1), 24));
+        assert!(anchor_due(1, 10, Some(24), 24));
+        assert!(!anchor_due(1, 10, None, 24));
+    }
+
+    #[test]
+    fn confirmation_retry_backoff_is_bounded_but_never_terminal() {
+        assert_eq!(confirmation_retry_seconds(0), 90);
+        assert_eq!(confirmation_retry_seconds(1), 180);
+        assert_eq!(confirmation_retry_seconds(5), 2_880);
+        assert_eq!(confirmation_retry_seconds(6), 3_600);
+        assert_eq!(confirmation_retry_seconds(u32::MAX), 3_600);
     }
 }

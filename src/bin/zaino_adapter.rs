@@ -1,8 +1,8 @@
 //! Zaino compact block adapter for ZAP1.
 //!
-//! Connects to a Zaino gRPC endpoint, fetches blocks containing ZAP1 anchors,
-//! and verifies anchor transactions are retrievable via the compact block path.
-//! Proves the Zaino backend works end-to-end without touching Zebra RPC.
+//! Connects to a Zaino gRPC endpoint and checks whether API-recorded
+//! transaction references are retrievable through the compact-block path.
+//! This does not inspect encrypted memo contents or bind a root to a transaction.
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -49,6 +49,13 @@ async fn main() -> Result<()> {
         .context("invalid anchor history JSON")?;
 
     println!("anchors from API: {}", anchors.total);
+    if anchors.total != anchors.anchors.len() {
+        return Err(anyhow!(
+            "anchor history total {} does not match {} returned records",
+            anchors.total,
+            anchors.anchors.len()
+        ));
+    }
 
     // connect to zaino
     let channel = tonic::transport::Channel::from_shared(cli.zaino_url.clone())
@@ -85,6 +92,15 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
+        if txid_hex.len() != 64
+            || !txid_hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            println!("  FAIL: recorded transaction reference has a noncanonical txid");
+            fail += 1;
+            continue;
+        }
 
         // fetch block via zaino compact block stream
         let block_resp = client
@@ -125,7 +141,7 @@ async fn main() -> Result<()> {
 
         if found_in_block && tx_ok && tx_size > 0 {
             println!(
-                "  pass: anchor block={} txid={}.. leaves={} tx_bytes={}",
+                "  pass: recorded transaction reference block={} txid={}.. leaves={} tx_bytes={}",
                 height,
                 &txid_hex[..12],
                 anchor.leaf_count,
@@ -134,7 +150,7 @@ async fn main() -> Result<()> {
             pass += 1;
         } else {
             println!(
-                "  FAIL: anchor block={} txid={}.. in_block={} tx_ok={} tx_size={}",
+                "  FAIL: recorded transaction reference block={} txid={}.. in_block={} tx_ok={} tx_size={}",
                 height,
                 &txid_hex[..12],
                 found_in_block,

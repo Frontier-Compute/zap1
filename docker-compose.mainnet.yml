@@ -1,11 +1,10 @@
 services:
   zap1:
-    build:
-      context: .
+    image: ${ZAP1_DEPLOYMENT_IMAGE_ID:?set ZAP1_DEPLOYMENT_IMAGE_ID to the sha256 image ID emitted by scripts/build_image.sh}
+    pull_policy: never
     container_name: zap1
     env_file: .env.mainnet
     volumes:
       - ./data:/data
-      # Uncomment when anchor automation is activated:
     network_mode: host
     restart: unless-stopped

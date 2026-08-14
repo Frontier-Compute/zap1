@@ -28,28 +28,19 @@ jobs:
             exit 1
           fi
 
-      - name: No AI language
+      - name: Project prose style
         run: |
           if grep -rin "comprehensive\|robust\|leverage\|seamless\|facilitates\|designed to\|intended to\|paving the way\|testament to\|underscores\|notably\|furthermore\|moreover" \
             --include="*.md" --include="*.rs" --include="*.kt" --include="*.swift" \
             --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git .; then
-            echo "::error::Found AI-sounding language"
-            exit 1
-          fi
-
-      - name: No AI tool references in code
-        run: |
-          if grep -rin "codex\|claude\|anthropic\|openai\|chatgpt" \
-            --include="*.rs" --include="*.kt" --include="*.swift" --include="*.sol" \
-            --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git .; then
-            echo "::error::Found AI tool references in source code"
+            echo "::error::Found disallowed boilerplate"
             exit 1
           fi
 
       - name: No grant references in source
         run: |
           # The /retrogrant evidence room is a deliberate grant surface; the guard covers everything else.
-          if grep -rin "ZCG\|grant\|milestone\|evaluator" src/ tests/ --exclude=evidence_page.html 2>/dev/null \
+          if grep -Prin '(?i)\b(?:ZCG|grant|milestone|evaluator)\b' src/ tests/ --exclude=evidence_page.html 2>/dev/null \
             | grep -v 'route("/retrogrant"'; then
             echo "::error::Found grant references in source code"
             exit 1

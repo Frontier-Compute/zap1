@@ -1,12 +1,15 @@
 # Zaino Integration Guide
 
-> ZCG Milestone 3 deliverable -- Zaino compact-block backend for ZAP1.
+> Completed independently after being proposed in the unfunded ZCG application.
 
 ## Overview
 
-ZAP1 supports two chain data backends: direct Zebra JSON-RPC and Zaino gRPC compact-block streaming. Switching between them requires changing a single environment variable. The scanner logic, payment detection, trial decryption, and anchor verification remain identical regardless of which backend is active.
+The repository contains direct Zebra JSON-RPC and Zaino gRPC backend code.
+`ZAINO_GRPC_URL` selects the Zaino path at startup. That code boundary does
+not by itself prove behavioral parity or that production currently uses Zaino.
 
-This document covers the architecture, protocol details, deployment, validation results, and migration path.
+This document covers the repository architecture, historical retrieval run,
+and a proposed migration path.
 
 ---
 
@@ -74,7 +77,10 @@ pub trait NodeBackend: Send + Sync {
 - Methods: `GetLatestBlock`, `GetBlock`, `GetTransaction`, `GetMempoolTx`
 - Uses compact block representations; raw tx fetched only when needed
 
-The scanner in `src/scanner.rs` calls only the `NodeBackend` trait methods. It does not know or care which backend is active. Payment detection, invoice matching, leaf insertion, and anchor verification all operate on the same data structures regardless of transport.
+The scanner in `src/scanner.rs` calls the `NodeBackend` trait methods.
+Payment observation and recorded-transaction lookups share application logic
+above that interface. Exact parity still needs behavioral tests because each
+transport can fail or omit data differently.
 
 ---
 
@@ -94,7 +100,7 @@ ZAP1 compiles two protobuf files at build time via `tonic-build` (see `build.rs`
 | `GetLatestBlock` | `ChainSpec` | `BlockID` | Chain tip height |
 | `GetBlock` | `BlockID` | `CompactBlock` | Block txids for scanner |
 | `GetBlockRange` | `BlockRange` | stream `CompactBlock` | Batch block streaming during catch-up |
-| `GetTransaction` | `TxFilter` | `RawTransaction` | Full raw tx for memo extraction and anchor verification |
+| `GetTransaction` | `TxFilter` | `RawTransaction` | Raw transaction retrieval for scanner processing |
 | `GetMempoolTx` | `Exclude` | stream `CompactTx` | Mempool monitoring for unconfirmed payments |
 | `GetLightdInfo` | `Empty` | `LightdInfo` | Server version, chain, block height |
 | `GetLatestTreeState` | `Empty` | `TreeState` | Sapling + Orchard note commitment tree state |
@@ -115,23 +121,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## 4. Validation Results
+## 4. Historical retrieval results
 
-### Test Infrastructure
+### Application-operated test infrastructure
 
 - Zaino 0.2.0 (ZingoLabs ZainoD) on `127.0.0.1:8137`
 - ZainoDB: 96 GB at `/mnt/zebra/zaino-db`
 - Connected to Zebra 4.3.0 at `127.0.0.1:8232`
-- Chain tip at validation: 3,289,945 (fully synced)
+- Operator-recorded chain tip: 3,289,945
 
-### Anchor Verification: 4/4 Pass
+### Recorded transaction retrieval: 4/4
 
-The `zaino_adapter` binary (`src/bin/zaino_adapter.rs`) fetches all ZAP1 anchors from the API, then verifies each one is retrievable via Zaino gRPC. For every anchor it:
+The `zaino_adapter` binary fetched the API's recorded root-to-transaction
+rows and checked that each referenced transaction was retrievable through the
+operator's Zaino instance. For every row it:
 
 1. Fetches the compact block at the anchor height via `GetBlock`
 2. Confirms the anchor txid appears in the block
 3. Fetches the full raw transaction via `GetTransaction`
-4. Verifies the transaction data is non-empty
+4. Checks that the returned transaction data is non-empty
+
+It does not decrypt the Orchard memo or prove that the API-supplied root is in
+that memo.
 
 ```
 $ cargo run --bin zaino_adapter -- --zaino-url http://127.0.0.1:8137
@@ -147,7 +158,7 @@ zaino chain tip: 3289945
 result: 4 pass, 0 fail, 4 total anchors
 ```
 
-### gRPC Endpoint Coverage
+### Historical gRPC endpoint coverage
 
 | Method | Result |
 |--------|--------|
@@ -160,7 +171,10 @@ result: 4 pass, 0 fail, 4 total anchors
 
 ### Compact Block Streaming
 
-Block range streaming from the first anchor block to the last (3,286,631 to 3,290,002) returned 3,372 compact blocks. All blocks contained valid compact transaction data with correct txid encoding (protocol-order bytes reversed to display-order hex).
+Block range streaming from the first recorded transaction height to the last
+returned 3,372 compact blocks. The application parsed the returned compact
+transaction data and matched its expected txid byte order. This was not an
+independent Zaino conformance test.
 
 ---
 
@@ -181,7 +195,7 @@ cargo build --release --bin zainod
 
 ### Configuration
 
-Zaino reads a TOML config file. Production config for this deployment:
+Zaino reads a TOML config file. Historical operator config used for this run:
 
 ```toml
 backend = "fetch"
@@ -254,7 +268,9 @@ export ZAINO_GRPC_URL=http://127.0.0.1:8137
 systemctl restart zap1  # or however you run it
 ```
 
-That is the entire change. No code modifications, no recompilation, no database migration.
+No code or database migration is intended for the selector itself. An operator
+still needs a staged parity run, current health checks, and rollback before
+changing a production backend.
 
 ### Rollback
 
@@ -287,7 +303,7 @@ systemctl restart zap1
 | Latency | One round-trip per block | Streaming, lower per-block overhead |
 | Mempool | `getrawmempool` polling | `GetMempoolTx` streaming |
 | Raw tx access | `getrawtransaction` | `GetTransaction` |
-| Maturity | Production (Zebra 4.3.0) | Production (Zaino 0.2.0, validated on mainnet) |
+| Evidence in this repo | historical operator production path | historical application retrieval run |
 | Extra infra | None (Zebra only) | Requires Zaino alongside Zebra |
 | Best for | Simple setups, minimal dependencies | Higher throughput, wallet-compatible scanning |
 
@@ -343,7 +359,14 @@ Design rule: never mix chain-transport logic into application business logic. Ke
 | `src/config.rs` | Config struct with `zaino_grpc_url` field |
 | `src/main.rs` | Backend creation at startup via `create_backend()` |
 | `src/scanner.rs` | Scanner loop (backend-agnostic) |
-| `src/bin/zaino_adapter.rs` | Validation tool: verifies all anchors via Zaino gRPC |
+| `src/bin/zaino_adapter.rs` | Retrieval tool: finds API-recorded txids through Zaino gRPC |
+
+## Evidence boundary
+
+The March 2026 output is historical and application-operated. It shows that the
+listed gRPC calls and transaction lookups worked in that environment. It does
+not establish current liveness, current production selection, full scanner
+equivalence, event completeness, or encrypted-memo contents.
 | `proto/service.proto` | `CompactTxStreamer` gRPC service definition |
 | `proto/compact_formats.proto` | `CompactBlock`, `CompactTx` message definitions |
 | `build.rs` | tonic-build proto compilation config |

@@ -1,126 +1,92 @@
-# ZAP1 Credential Derivation Spec v0.1 (draft)
+# ZAP1 credential design v0.1
 
-Credentials are privacy-preserving claims derived from ZAP1 attestation history. A credential proves a fact about a participant without revealing their identity or full history.
+Status: design only, not implemented
 
-## Model
+This note sketches selective-disclosure claims that could be built from ZAP1
+receipts. The current verifier does not issue or validate these credentials.
+Names such as `good_standing_90d` are requested operator claims, not facts
+created by a Merkle proof.
 
-A credential is a tuple:
+## Base receipt
 
-```
-(claim_type, claim_value, proof_bundle, anchor_txid, anchor_height)
-```
+A proposed credential would contain:
 
-The proof bundle contains the Merkle proof(s) that back the claim. The anchor txid links the proof to a specific on-chain commitment. The verifier checks the proof against the anchored root without learning anything else about the participant.
-
-## Credential types
-
-### good_standing_90d
-
-Claim: "This wallet has been an active participant for at least 90 days with no gaps in hosting payments."
-
-Derivation:
-1. Find the PROGRAM_ENTRY leaf for the wallet hash
-2. Find HOSTING_PAYMENT leaves covering at least 3 consecutive months
-3. Verify no EXIT leaf exists for this wallet
-4. Bundle the Merkle proofs for all referenced leaves
-
-Proof structure:
-```json
-{
-  "credential": "good_standing_90d",
-  "wallet_hash": "...",
-  "entry_leaf": "...",
-  "payment_leaves": ["...", "...", "..."],
-  "proofs": [...],
-  "anchor_txid": "...",
-  "anchor_height": 3288022
-}
+```text
+(claim_type, disclosed_witnesses, proof_bundles, root, transaction_reference)
 ```
 
-Verifier checks:
-- Each leaf hash is in the Merkle tree under the anchored root
-- Entry leaf predates the first payment leaf by at least 90 days
-- Payment leaves cover consecutive months
+For every positive event claim, the verifier would need to:
 
-Limitation: current proof system provides inclusion proofs only. "No EXIT leaf exists" cannot be proven cryptographically today. The verifier must either trust the operator's API for non-inclusion, or a future non-inclusion proof mechanism must be added. This is an open design problem.
+1. recompute the event leaf from the disclosed witness
+2. verify inclusion under the supplied root and declared Merkle scheme
+3. apply the claim-specific rule to the disclosed fields
+4. check freshness under its own policy
 
-### deployed_asset_verified
+A txid and height can establish transaction existence. Binding the supplied
+root to an encrypted Orchard memo needs a separate safe opening.
 
-Claim: "Hardware serial X is deployed at a facility and owned by this wallet."
+## Candidate claims
 
-Derivation:
-1. Find the OWNERSHIP_ATTEST leaf linking wallet hash to serial
-2. Find the DEPLOYMENT leaf for the serial
-3. Bundle both Merkle proofs
+### `good_standing_90d`
 
-Proof structure:
-```json
-{
-  "credential": "deployed_asset_verified",
-  "wallet_hash": "...",
-  "serial_hash": "...",
-  "ownership_leaf": "...",
-  "deployment_leaf": "...",
-  "proofs": [...],
-  "anchor_txid": "...",
-  "anchor_height": 3288022
-}
-```
+Possible evidence:
 
-Verifier checks:
-- Both leaves are in the tree under the anchored root
-- The serial hash matches across both leaves
+- disclosed `PROGRAM_ENTRY` preimage and inclusion proof
+- disclosed `HOSTING_PAYMENT` preimages and inclusion proofs
+- operator-issued timestamps or periods
 
-Limitation: "no TRANSFER or EXIT after deployment" requires non-inclusion proofs, which are not implemented. Same constraint as good_standing_90d. Verifier must trust API for negative claims until a non-inclusion mechanism ships.
+The current system cannot prove that no payment gap or later `EXIT` exists.
+It has no complete event-universe commitment and no non-inclusion proof.
+Therefore `good standing` cannot be verified from current bundles.
 
-### payments_current
+### `deployed_asset`
 
-Claim: "This participant's hosting payments are current as of the latest anchor."
+Possible evidence:
 
-Derivation:
-1. Find the most recent HOSTING_PAYMENT leaf for the serial
-2. Verify the month/year matches the current or previous calendar month
-3. Bundle the Merkle proof
+- disclosed `OWNERSHIP_ATTEST` preimage and inclusion proof
+- disclosed `DEPLOYMENT` preimage and inclusion proof
+- equality checks over the disclosed serial field
 
-Proof structure:
-```json
-{
-  "credential": "payments_current",
-  "serial_hash": "...",
-  "payment_leaf": "...",
-  "month": 3,
-  "year": 2026,
-  "proof": [...],
-  "anchor_txid": "...",
-  "anchor_height": 3288022
-}
-```
+This would show consistency of selected operator-issued claims. It would not
+prove physical possession, facility installation, current ownership, or the
+absence of a later transfer or exit.
 
-Verifier checks:
-- Payment leaf is in the tree under the anchored root
+### `payments_current`
 
-Limitation: month/year are hashed into the leaf payload but not persisted separately in the current DB schema or proof bundle. The verifier cannot extract month/year from the leaf hash alone. This requires either: (a) extending proof bundles to include plaintext witness data alongside the hash, or (b) the prover supplies the preimage fields and the verifier recomputes the hash. Option (b) is the cleaner path and will be implemented in zap1-schema.
-- The anchor is recent enough to be meaningful (configurable staleness threshold)
+Possible evidence:
 
-## Privacy properties
+- disclosed `HOSTING_PAYMENT` preimage
+- inclusion proof
+- verifier policy for acceptable month, year, and staleness
 
-- Credential proofs reveal only the specific leaves needed for the claim
-- The wallet hash is a derived value, not the address itself
-- The verifier learns the claim is true but not the full participant history
-- Other leaves in the tree remain hidden
-- The Merkle proof path reveals sibling hashes, which are opaque without context
+A `HOSTING_PAYMENT` leaf is an application claim. It does not identify a
+wallet transaction, amount, payer, payee, or settlement unless separate primary
+payment evidence is supplied. The public proof bundle withholds the preimage,
+so a credential issuer must disclose it explicitly.
 
-## Threat model
+## Privacy boundary
 
-- **Replay:** A credential is bound to a specific anchor. Verifiers should check anchor freshness.
-- **Stale claims:** A participant could present an old credential after exiting. Verifiers should require recent anchors.
-- **False negatives:** If a leaf is not yet anchored, the credential cannot be derived. Anchor frequency bounds the latency.
-- **Selective reveal:** A participant with multiple assets can choose which ones to prove. This is a feature, not a bug.
+A Merkle path reveals sibling hashes and the supplied root. Disclosed witnesses
+reveal whatever fields the issuer includes. The historical field name
+`wallet_hash` does not guarantee that the value was derived safely. Operators
+must submit domain-separated pseudonyms and consider correlation across
+credentials.
 
-## Implementation status
+Selective disclosure is not zero knowledge. It hides undisclosed preimages but
+does not prove their absence, unlinkability, or the truth of disclosed claims.
 
-This spec is a design document. The derivation rules and proof structures are defined but not yet implemented in zap1-verify or zap1-js. Implementation is a Phase 2 deliverable.
+## Missing machinery
 
-## Relationship to selective disclosure
+Production credentials require:
 
-Credentials are one-directional proofs: the participant proves a fact to a counterparty. Selective disclosure (viewing key export, audit packages) is a separate workflow where the participant grants read access to a subset of their encrypted history. Both are useful. Credentials are simpler and require no key sharing.
+- a versioned credential schema
+- authenticated witness provenance
+- exact issuance and revocation rules
+- completeness or non-inclusion machinery for negative claims
+- root-authentication and safe memo-opening policy
+- expiry and replay rules
+- conformance vectors and an independent implementation
+
+Until those exist, these are application design sketches. No legal, adoption,
+payment, ownership, or good-standing conclusion should cite this document as
+proof.

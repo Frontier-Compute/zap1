@@ -19,14 +19,14 @@ async fn main() -> Result<()> {
 
     let config = Arc::new(config::Config::from_env()?);
     tracing::info!("Network: {:?}", config.network);
-    tracing::info!("Zebra RPC: {}", config.zebra_rpc_url);
+    tracing::info!("Zebra RPC configured");
     tracing::info!("Scan from height: {}", config.scan_from_height);
 
     let ufvk = Arc::new(keys::parse_ufvk(&config.network, &config.ufvk)?);
     tracing::info!("UFVK loaded successfully");
 
-    let test_addr = keys::address_for_index_encoded(&ufvk, &config.network, 0)?;
-    tracing::info!("Test address (index 0): {}", test_addr);
+    let _ = keys::address_for_index_encoded(&ufvk, &config.network, 0)?;
+    tracing::info!("UFVK address derivation validated");
 
     let db = Arc::new(db::Db::open(&config.db_path)?);
     tracing::info!("Database opened: {}", config.db_path);

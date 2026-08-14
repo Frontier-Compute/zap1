@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set +x
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,6 +39,15 @@ API="${ZAP1_API_BASE:-https://api.frontiercompute.cash}"
 API="${API%/}"
 EXPECTED_IMAGE_ID="${ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID:-}"
 MAX_SYNC_LAG_BLOCKS="${ZAP1_MAX_SYNC_LAG_BLOCKS:-10}"
+
+ADMIN_API_KEY="${ZAP1_ADMIN_API_KEY:-}"
+unset ZAP1_ADMIN_API_KEY
+case "$ADMIN_API_KEY" in
+  ''|*[!A-Za-z0-9._~-]*)
+    printf 'ZAP1_ADMIN_API_KEY is required and must use the safe token alphabet.\n' >&2
+    exit 1
+    ;;
+esac
 
 if [ -z "$EXPECTED_IMAGE_ID" ]; then
   printf 'ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID is required from the operator-local pinned-image receipt.\n' >&2
@@ -101,8 +111,13 @@ printf 'Maximum scanner sync lag: %s blocks\n' "$MAX_SYNC_LAG_BLOCKS"
 
 run "evaluator privacy policy self-test" \
   "$PYTHON_BIN" conformance/check_api.py --self-test
-run "API schema and declared runtime metadata parity" \
-  "$PYTHON_BIN" conformance/check_api.py "$API"
+authenticated_api_check() {
+  ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS=true \
+    ZAP1_ADMIN_API_KEY="$ADMIN_API_KEY" \
+    "$PYTHON_BIN" conformance/check_api.py "$API"
+}
+run "API schema and declared runtime metadata parity" authenticated_api_check
+unset ADMIN_API_KEY
 run "anchor liveness" \
   "$PYTHON_BIN" scripts/check_anchor_liveness.py
 

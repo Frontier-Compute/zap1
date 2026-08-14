@@ -118,19 +118,24 @@ For an operator-authorized external-wallet send, request the prepared QR with
 the API key in the Authorization header:
 
 ```bash
+export ZAP1_API_BASE="${ZAP1_API_BASE:?set ZAP1_API_BASE to this deployment}"
 curl -sf \
   -H "Authorization: Bearer $API_KEY" \
-  http://127.0.0.1:3081/admin/anchor/qr
+  "${ZAP1_API_BASE%/}/admin/anchor/qr"
 ```
+Use one operator and one live tab for a send. Reload immediately before
+scanning, and record a broadcast before requesting the page again.
+
 
 After the exact transaction confirms, record its root, txid, and height:
 
 ```bash
+export ZAP1_API_BASE="${ZAP1_API_BASE:?set ZAP1_API_BASE to this deployment}"
 curl -sf -X POST \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"root":"ROOT_HASH","txid":"TXID","height":BLOCK_HEIGHT}' \
-  http://127.0.0.1:3081/admin/anchor/record
+  "${ZAP1_API_BASE%/}/admin/anchor/record"
 ```
 
 API keys belong only in Authorization headers. Never place them in URLs,
@@ -141,7 +146,8 @@ safe opening.
 ## Monitoring
 
 ```bash
-cargo run --locked --bin zap1_ops -- --base-url http://127.0.0.1:3081 --json
+export ZAP1_API_BASE="${ZAP1_API_BASE:?set ZAP1_API_BASE to this deployment}"
+cargo run --locked --bin zap1_ops -- --base-url "${ZAP1_API_BASE%/}" --json
 python3 scripts/check_anchor_liveness.py
 ```
 

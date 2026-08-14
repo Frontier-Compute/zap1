@@ -117,6 +117,10 @@ fn zip321_uri(address: &str, amount_zat: u64, memo: &[u8]) -> String {
     )
 }
 
+fn anchor_send_required(anchor_txid: Option<&str>, unanchored_leaves: u32) -> bool {
+    anchor_txid.is_none() && unanchored_leaves > 0
+}
+
 fn invoice_payment_uri(address: &str, amount_zat: u64, invoice_short: &str) -> String {
     zip321_uri(
         address,
@@ -486,7 +490,7 @@ async fn create_invoice(
         .create_invoice(&invoice)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    tracing::info!("Created invoice {} -> {}", invoice.id, invoice.address);
+    tracing::info!("Created invoice {}", invoice.id);
 
     // Signal notification
     let config = state.config.clone();
@@ -2166,9 +2170,9 @@ async fn stats(
 #[cfg(test)]
 mod evidence_surface_tests {
     use super::{
-        anchor_recommendation, invoice_payment_uri, metadata_bool, metadata_hex_len,
-        parse_build_metadata, protocol_metadata, public_stats_snapshot, zip321_uri, MemoType,
-        SYSTEM_MANAGED_EVENT_TYPES,
+        anchor_recommendation, anchor_send_required, invoice_payment_uri, metadata_bool,
+        metadata_hex_len, parse_build_metadata, protocol_metadata, public_stats_snapshot,
+        zip321_uri, MemoType, SYSTEM_MANAGED_EVENT_TYPES,
     };
 
     #[test]
@@ -2278,6 +2282,14 @@ mod evidence_surface_tests {
             format!("zcash:u1test?amount=0.0001&memo={expected_memo}")
         );
         assert!(!uri.contains(&hex::encode(memo)));
+    }
+
+    #[test]
+    fn anchor_qr_send_action_fails_closed_after_a_reference_exists() {
+        assert!(anchor_send_required(None, 150));
+        assert!(!anchor_send_required(None, 0));
+        assert!(!anchor_send_required(Some(&"a".repeat(64)), 0));
+        assert!(!anchor_send_required(Some(&"a".repeat(64)), 1));
     }
 
     #[test]
@@ -2662,28 +2674,49 @@ async fn admin_anchor_qr(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let root = root.ok_or((StatusCode::BAD_REQUEST, "no Merkle root yet".into()))?;
-    let addr = state.config.anchor_to_address.as_deref().ok_or((
-        StatusCode::BAD_REQUEST,
-        "ANCHOR_TO_ADDRESS not configured".into(),
-    ))?;
-
     let memo_text = format!("ZAP1:09:{}", root.root_hash);
-    let uri = zip321_uri(addr, state.config.anchor_amount_zat, memo_text.as_bytes());
-    let qr_svg = generate_qr_svg(&uri);
-    let record_command = html_escape(&format!(
-        r#"curl -X POST http://127.0.0.1:3081/admin/anchor/record \
+    let send_required = anchor_send_required(root.anchor_txid.as_deref(), unanchored);
+    let action_panel = if send_required {
+        let addr = state.config.anchor_to_address.as_deref().ok_or((
+            StatusCode::BAD_REQUEST,
+            "ANCHOR_TO_ADDRESS not configured".into(),
+        ))?;
+        let uri = zip321_uri(addr, state.config.anchor_amount_zat, memo_text.as_bytes());
+        let qr_svg = generate_qr_svg(&uri);
+        let record_command = html_escape(&format!(
+            r#": "${{ZAP1_API_BASE:?set ZAP1_API_BASE to this deployment}}"
+curl -X POST "${{ZAP1_API_BASE%/}}/admin/anchor/record" \
   -H 'Authorization: Bearer <operator-key>' \
   -H 'Content-Type: application/json' \
   -d '{{"root":"{}","txid":"<64-hex-txid>","height":<confirmed-height>}}'"#,
-        root.root_hash
-    ));
+            root.root_hash
+        ));
+        format!(
+            r#"<div class="anchor-action" data-anchor-send-enabled="true">
+<div class="qr">{qr_svg}</div>
+<div class="memo">Memo: {}</div>
+<div>Scan with a ZIP-321-compatible wallet. Send {} ZEC.</div>
+<p>After configured-node confirmation, record the transaction reference with header authentication.</p>
+<pre>{record_command}</pre>
+</div>"#,
+            html_escape(&memo_text),
+            zatoshi_amount(state.config.anchor_amount_zat),
+        )
+    } else {
+        r#"<div class="anchor-action" data-anchor-send-enabled="false">
+<p>No wallet send action is available for this root. A transaction reference already exists or there are no unanchored leaves.</p>
+</div>"#
+            .to_string()
+    };
 
     let status = if root.anchor_txid.is_some() && root.anchor_height.is_some() && unanchored == 0 {
         "transaction reference confirmed"
     } else if root.anchor_txid.is_some() {
         "transaction broadcast recorded, confirmation pending"
-    } else {
+    } else if send_required {
         "needs transaction reference"
+    } else {
+        "wallet send unavailable for the current state"
     };
 
     let html = format!(
@@ -2701,16 +2734,12 @@ pre {{ background:#1a1e27; border:1px solid #333; color:#e2e4e8; padding:12px; b
 </style></head><body>
 <h1>Anchor #{}</h1>
 <div class="status">{}</div>
-<div class="qr">{}</div>
 <div class="info">
   <div>Root: {}</div>
   <div>Leaves: {} ({} unanchored)</div>
-  <div class="memo">Memo: {}</div>
-  <div>Scan with a ZIP-321-compatible wallet. Send {} ZEC.</div>
 </div>
-<p>After configured-node confirmation, record the transaction reference with header authentication.</p>
+{}
 <p>This checks transaction existence and height only. It does not open the encrypted memo or independently prove that the memo contains this root.</p>
-<pre>{}</pre>
 </body></html>"#,
         if status == "transaction reference confirmed" {
             "#4caf50"
@@ -2719,13 +2748,10 @@ pre {{ background:#1a1e27; border:1px solid #333; color:#e2e4e8; padding:12px; b
         },
         root.leaf_count / 4 + 1,
         status,
-        qr_svg,
         root.root_hash,
         root.leaf_count,
         unanchored,
-        html_escape(&memo_text),
-        zatoshi_amount(state.config.anchor_amount_zat),
-        record_command,
+        action_panel,
     );
 
     Ok(Html(html))

@@ -75,6 +75,7 @@ cargo metadata --locked --format-version 1 --no-deps >/dev/null
 run "implementation profile" "$PYTHON_BIN" conformance/implementation_profile_check.py
 run "conformance fixtures" "$PYTHON_BIN" conformance/check.py
 run "compatibility vectors" "$PYTHON_BIN" scripts/check_compatibility.py
+run "operational control contracts" "$PYTHON_BIN" scripts/check_operational_controls.py
 run "live evaluator self-tests" "$PYTHON_BIN" conformance/check_api.py --self-test
 run "browser verifier regressions" node verify-widget/verifier.test.mjs
 

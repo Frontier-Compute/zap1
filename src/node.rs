@@ -259,10 +259,10 @@ use proto::{BlockId, ChainSpec, GetMempoolTxRequest, TxFilter};
 /// Create a NodeBackend from configuration.
 pub fn create_backend(config: &crate::config::Config) -> Box<dyn NodeBackend> {
     if let Some(ref zaino_url) = config.zaino_grpc_url {
-        tracing::info!("Scanner backend: Zaino gRPC at {}", zaino_url);
+        tracing::info!("Scanner backend: Zaino gRPC");
         Box::new(ZainoBackend::new(zaino_url))
     } else {
-        tracing::info!("Scanner backend: Zebra RPC at {}", config.zebra_rpc_url);
+        tracing::info!("Scanner backend: Zebra RPC");
         Box::new(ZebraRpcBackend::new(&config.zebra_rpc_url))
     }
 }

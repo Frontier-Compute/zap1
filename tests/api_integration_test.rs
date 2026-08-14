@@ -264,6 +264,89 @@ async fn admin_qr_rejects_api_keys_in_urls() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn anchor_qr_suppresses_send_after_recording() {
+    let db = std::sync::Arc::new(zap1::db::Db::open(":memory:").unwrap());
+    let mut config = zap1::config::Config::test_defaults();
+    config.anchor_to_address = Some("u1test".to_string());
+    let app = test_app_with_config_and_db(config, db.clone());
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/event")
+                .header("content-type", "application/json")
+                .header("authorization", "Bearer test_key")
+                .body(Body::from(
+                    r#"{"event_type":"DEPLOYMENT","wallet_hash":"test","serial_number":"s1","facility_id":"f1"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created_body = axum::body::to_bytes(created.into_body(), 10_000)
+        .await
+        .unwrap();
+    let created_json: serde_json::Value = serde_json::from_slice(&created_body).unwrap();
+    let root = created_json["root_hash"].as_str().unwrap();
+
+    let actionable = app
+        .clone()
+        .oneshot(
+            Request::get("/admin/anchor/qr")
+                .header("authorization", "Bearer test_key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(actionable.status(), StatusCode::OK);
+    let actionable_html = String::from_utf8(
+        axum::body::to_bytes(actionable.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(actionable_html.contains("data-anchor-send-enabled=\"true\""));
+    assert!(actionable_html.contains("<svg"));
+    assert!(actionable_html.contains("ZAP1_API_BASE"));
+    assert!(actionable_html.contains("/admin/anchor/record"));
+    assert!(actionable_html.contains(root));
+    assert!(actionable_html.contains(&format!("Memo: ZAP1:09:{root}")));
+    assert!(actionable_html.contains("Send 0.00001 ZEC."));
+    assert!(actionable_html.contains("${ZAP1_API_BASE%/}/admin/anchor/record"));
+    assert!(!actionable_html.contains("127.0.0.1:3081"));
+    assert!(!actionable_html.contains("test_key"));
+
+    db.record_confirmed_manual_anchor_reference(root, &"a".repeat(64), 1)
+        .unwrap();
+    let recorded = app
+        .oneshot(
+            Request::get("/admin/anchor/qr")
+                .header("authorization", "Bearer test_key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(recorded.status(), StatusCode::OK);
+    let recorded_html = String::from_utf8(
+        axum::body::to_bytes(recorded.into_body(), 100_000)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(recorded_html.contains("data-anchor-send-enabled=\"false\""));
+    assert!(recorded_html.contains("transaction reference confirmed"));
+    assert!(!recorded_html.contains("<svg"));
+    assert!(!recorded_html.contains("Scan with"));
+    assert!(!recorded_html.contains("/admin/anchor/record"));
+    assert!(!recorded_html.contains("Memo: ZAP1:09:"));
+}
+
 #[test]
 fn database_api_keys_expire_and_consume_quota_atomically() {
     use sha2::{Digest, Sha256};

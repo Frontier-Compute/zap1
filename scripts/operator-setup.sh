@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set +x
 set -euo pipefail
 umask 077
 
@@ -241,6 +242,7 @@ EOF
 # Write run script
 cat > "$OUTDIR/run.sh" <<EOF
 #!/usr/bin/env bash
+set +x
 set -euo pipefail
 cd "\$(dirname "\$0")"
 BASE_URL="http://127.0.0.1:$PORT"
@@ -372,6 +374,23 @@ if ! verify_pinned_evaluator; then
   stop_failed "Pinned evaluator bytes changed during startup"
 fi
 
+ADMIN_API_KEY=""
+ADMIN_API_KEY_LINES=0
+while IFS= read -r line; do
+  case "\$line" in
+    API_KEY=*)
+      ADMIN_API_KEY_LINES=\$((ADMIN_API_KEY_LINES + 1))
+      ADMIN_API_KEY="\${line#API_KEY=}"
+      ;;
+  esac
+done < .env
+if [ "\$ADMIN_API_KEY_LINES" -ne 1 ]; then
+  stop_failed "Generated .env must contain exactly one API_KEY line"
+fi
+case "\$ADMIN_API_KEY" in
+  ''|*[!A-Za-z0-9._~-]*) stop_failed "Generated API_KEY has an unsafe shape" ;;
+esac
+
 if ! ZAP1_API_BASE="http://127.0.0.1:$PORT" \
   ZAP1_REQUIRE_SOURCE_PARITY=true \
   ZAP1_EXPECTED_SOURCE_REVISION=$SOURCE_REVISION \
@@ -379,9 +398,13 @@ if ! ZAP1_API_BASE="http://127.0.0.1:$PORT" \
   ZAP1_EXPECTED_SOURCE_MANIFEST_SHA256=$SOURCE_MANIFEST \
   ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID=$IMAGE_ID \
   ZAP1_MAX_SYNC_LAG_BLOCKS="\$MAX_SYNC_LAG_BLOCKS" \
+  ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS=true \
+  ZAP1_ADMIN_API_KEY="\$ADMIN_API_KEY" \
   python3 "\$CHECKER_PATH" "http://127.0.0.1:$PORT"; then
+  unset ADMIN_API_KEY
   stop_failed "Deployment identity, API schema, or final health check failed"
 fi
+unset ADMIN_API_KEY
 echo "ZAP1 operator '$OPERATOR' started on port $PORT"
 echo "Health: curl http://127.0.0.1:$PORT/health"
 echo "Anchor QR requires the API key in an Authorization header; never put it in a URL."
@@ -393,7 +416,7 @@ echo ""
 echo "Operator: $OPERATOR"
 echo "Port: $PORT"
 echo "API key: stored only in $OUTDIR/.env"
-echo "Address: $ADDRESS"
+echo "Address: operator-supplied shielded receiver (not printed)"
 echo "Scan from height: $SCAN_FROM_HEIGHT"
 echo "Image ID: $IMAGE_ID"
 echo "Build receipt: $RECEIPT_PATH"

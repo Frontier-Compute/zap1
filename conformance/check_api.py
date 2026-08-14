@@ -29,6 +29,7 @@ EXPECTED_SOURCE_TREE = os.environ.get("ZAP1_EXPECTED_SOURCE_TREE", "")
 EXPECTED_SOURCE_MANIFEST = os.environ.get("ZAP1_EXPECTED_SOURCE_MANIFEST_SHA256", "")
 EXPECTED_DEPLOYMENT_IMAGE_ID = os.environ.get("ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID", "")
 MAX_SYNC_LAG_BLOCKS_RAW = os.environ.get("ZAP1_MAX_SYNC_LAG_BLOCKS", "10")
+REQUIRE_ADMIN_CHECK_RAW = os.environ.get("ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS", "false")
 
 NODE_PERSONAL = b"NordicShield_MRK"
 ROOT_PERSONAL = b"NordicShield_RTK"
@@ -44,6 +45,10 @@ except ValueError:
     raise SystemExit("ZAP1_MAX_SYNC_LAG_BLOCKS must be a nonnegative integer")
 if MAX_SYNC_LAG_BLOCKS < 0:
     raise SystemExit("ZAP1_MAX_SYNC_LAG_BLOCKS must be a nonnegative integer")
+
+if REQUIRE_ADMIN_CHECK_RAW not in {"true", "false"}:
+    raise SystemExit("ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS must be exactly true or false")
+REQUIRE_ADMIN_CHECK = REQUIRE_ADMIN_CHECK_RAW == "true"
 
 # Public inclusion proofs need commitments, not event payload openings. Keep the
 # complete POST /event payload vocabulary here so any accidental disclosure is
@@ -93,6 +98,12 @@ def check(label, ok, detail=""):
 
 
 API_KEY = os.environ.get("ZAP1_ADMIN_API_KEY", "")
+if REQUIRE_ADMIN_CHECK and re.fullmatch(r"[A-Za-z0-9._~-]+", API_KEY) is None:
+    raise SystemExit(
+        "ZAP1_ADMIN_API_KEY is required when authenticated admin checks are mandatory "
+        "and must use the safe token alphabet"
+    )
+
 
 
 def request_headers(headers=None, *, accept_json=False, content_type=None):
@@ -684,23 +695,98 @@ def main():
     except Exception as e:
         check("/memo/decode", False, str(e))
 
-    # /admin/anchor/qr (requires auth, returns HTML when anchors exist)
+    # /admin/anchor/qr (requires header auth and must fail closed when no send is due)
     status, body, ctype = fetch_raw("/admin/anchor/qr")
     check("/admin/anchor/qr rejects without auth", status == 401)
+    anchor_status = fetch("/anchor/status")
+    anchor_status_valid = isinstance(anchor_status, dict)
+    if anchor_status_valid:
+        current_root = anchor_status.get("current_root")
+        leaf_count = anchor_status.get("leaf_count")
+        unanchored = anchor_status.get("unanchored_leaves")
+        last_txid = anchor_status.get("last_anchor_txid")
+        needs_anchor = anchor_status.get("needs_anchor")
+        root_is_none = current_root == "none"
+        root_is_hex = (
+            isinstance(current_root, str)
+            and HEX32_RE.fullmatch(current_root) is not None
+        )
+        anchor_status_valid = (
+            (root_is_none or root_is_hex)
+            and type(leaf_count) is int
+            and leaf_count >= 0
+            and type(unanchored) is int
+            and 0 <= unanchored <= leaf_count
+            and type(needs_anchor) is bool
+            and (
+                last_txid is None
+                or isinstance(last_txid, str)
+                and HEX32_RE.fullmatch(last_txid) is not None
+            )
+        )
+        if anchor_status_valid and root_is_none:
+            anchor_status_valid = (
+                leaf_count == 0
+                and unanchored == 0
+                and last_txid is None
+                and needs_anchor is False
+            )
+        elif anchor_status_valid:
+            anchor_status_valid = (
+                leaf_count > 0
+                and needs_anchor == (last_txid is None or unanchored > 0)
+            )
+    check("/anchor/status supports the authenticated QR gate", anchor_status_valid)
 
     if API_KEY:
         status, body, ctype = fetch_raw(
             "/admin/anchor/qr",
             headers={"Authorization": f"Bearer {API_KEY}"},
         )
-        if has_anchors:
+        if anchor_status_valid and current_root != "none":
             check("/admin/anchor/qr returns 200 with auth", status == 200)
             check("/admin/anchor/qr content-type is HTML", "text/html" in ctype)
             check("/admin/anchor/qr body contains HTML", "<html" in body.lower())
+            check("/admin/anchor/qr binds current root", current_root in body)
+            check(
+                "/admin/anchor/qr binds leaf counts",
+                f"Leaves: {leaf_count} ({unanchored} unanchored)" in body,
+            )
+            check("/admin/anchor/qr does not reflect the API key", API_KEY not in body)
+            send_expected = last_txid is None and unanchored > 0
+            if send_expected:
+                check(
+                    "/admin/anchor/qr exposes one actionable send state",
+                    'data-anchor-send-enabled="true"' in body and "<svg" in body,
+                )
+                check(
+                    "/admin/anchor/qr binds the exact memo",
+                    f"Memo: ZAP1:09:{current_root}" in body,
+                )
+                check(
+                    "/admin/anchor/qr record command is endpoint-explicit and port-agnostic",
+                    "ZAP1_API_BASE" in body
+                    and "/admin/anchor/record" in body
+                    and "127.0.0.1:3081" not in body,
+                )
+            else:
+                check(
+                    "/admin/anchor/qr suppresses duplicate send actions",
+                    'data-anchor-send-enabled="false"' in body
+                    and "<svg" not in body
+                    and "Scan with" not in body
+                    and "/admin/anchor/record" not in body,
+                )
         else:
             check("/admin/anchor/qr accepted auth", status in (200, 400))
             if status == 400:
-                print("  skip  /admin/anchor/qr HTML checks  (no anchors yet)")
+                print("  skip  /admin/anchor/qr HTML checks  (no Merkle root yet)")
+    elif REQUIRE_ADMIN_CHECK:
+        check(
+            "/admin/anchor/qr authenticated checks are mandatory",
+            False,
+            "ZAP1_ADMIN_API_KEY not set",
+        )
     else:
         print("  skip  /admin/anchor/qr authenticated checks  (ZAP1_ADMIN_API_KEY not set)")
 

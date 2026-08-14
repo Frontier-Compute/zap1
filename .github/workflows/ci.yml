@@ -77,6 +77,24 @@ jobs:
       - name: Liveness policy tests
         run: python3 -m unittest scripts/check_anchor_liveness_test.py
 
+      - name: Operational control contracts
+        run: python3 scripts/check_operational_controls.py
+
+      - name: Required admin check rejects a missing key
+        run: |
+          if ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS=true python3 conformance/check_api.py --self-test; then
+            echo "expected required admin policy to reject a missing key"
+            exit 1
+          fi
+
+      - name: Required admin check rejects an unsafe key and accepts a safe key
+        run: |
+          if ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS=true ZAP1_ADMIN_API_KEY='bad key' python3 conformance/check_api.py --self-test; then
+            echo "expected required admin policy to reject an unsafe key"
+            exit 1
+          fi
+          ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS=true ZAP1_ADMIN_API_KEY='safe_key-1' python3 conformance/check_api.py --self-test
+
       - name: Conformance protocol checks
         run: python3 conformance/check.py
 

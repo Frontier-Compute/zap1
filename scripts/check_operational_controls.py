@@ -20,6 +20,7 @@ api_rs = read("src/api.rs")
 setup = read("scripts/operator-setup.sh")
 live = read("scripts/check_live.sh")
 checker = read("conformance/check_api.py")
+anchor_workflow = read(".github/workflows/anchor-liveness.yml")
 
 require("Test address (index 0)" not in main_rs, "startup still logs a UFVK-derived address")
 require("test_addr" not in main_rs, "startup retains a derived-address logging handle")
@@ -66,6 +67,34 @@ require(
     "API checker can silently skip a required admin path",
 )
 
+require(
+    "github.event_name == 'schedule' || inputs.mode == 'public-monitor'"
+    in anchor_workflow,
+    "scheduled public monitoring is not isolated from the exact deployment gate",
+)
+require(
+    "ZAP1_REQUIRE_FRESH_ANCHOR: 'false'" in anchor_workflow,
+    "paused anchor authority is not explicit in the public monitor",
+)
+require(
+    "python3 conformance/check_api.py ${ZAP1_API_BASE}" in anchor_workflow,
+    "scheduled monitoring omits the public API privacy contract",
+)
+require(
+    "github.event_name == 'workflow_dispatch' && inputs.mode == 'exact-deployment'"
+    in anchor_workflow,
+    "the secret-bearing exact deployment gate is not manual-only",
+)
+require(
+    anchor_workflow.count("bash scripts/check_live.sh") == 1
+    and anchor_workflow.count("ZAP1_ADMIN_API_KEY: ${{ secrets.ZAP1_ADMIN_API_KEY }}") == 1,
+    "the exact deployment checker or its secret is duplicated across workflow paths",
+)
+require(
+    "permissions:\n  contents: read" in anchor_workflow,
+    "anchor workflow token permissions are not explicitly read-only",
+)
+
 require(live.startswith("#!/usr/bin/env bash\nset +x\n"), "live checker does not disable xtrace")
 require(
     "unset ZAP1_ADMIN_API_KEY" in live
@@ -80,4 +109,6 @@ require(
     "runtime logs can disclose configured RPC endpoints",
 )
 
-print("PASS: operational privacy, admin-auth, and anchor-send contracts")
+print(
+    "PASS: operational privacy, admin-auth, anchor-send, and monitoring-separation contracts"
+)

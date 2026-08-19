@@ -47,7 +47,7 @@ cargo run --bin zip302_tvlv -- decode <memo_hex>
 
 ## 3. Anchor liveness check
 
-Nightly GitHub Actions check plus local script.
+Nightly GitHub Actions checks plus a local script.
 
 Use:
 - check public anchor surfaces for freshness and internal consistency
@@ -65,6 +65,18 @@ python3 scripts/check_anchor_liveness.py
 Workflow:
 
 - `.github/workflows/anchor-liveness.yml`
+
+The scheduled `public-monitor` keeps three claims separate:
+
+- anchor structure and cross-surface consistency must remain valid;
+- a stale anchor with pending work is reported as a warning while transaction
+  authority is paused;
+- the public API contract and preimage-redaction boundary still fail closed.
+
+The manual `exact-deployment` mode is the only workflow path that reads the
+operator-provided expected image ID and admin API secret. It remains strict on
+source parity, authenticated admin behavior, anchor freshness, and the current
+proof. A green public monitor is not a deployment attestation.
 
 Files:
 

@@ -4,24 +4,78 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Gate to run
+        required: true
+        default: public-monitor
+        type: choice
+        options:
+          - public-monitor
+          - exact-deployment
+
+permissions:
+  contents: read
 
 jobs:
-  prove-liveness:
+  public-anchor-monitor:
+    if: ${{ github.event_name == 'schedule' || inputs.mode == 'public-monitor' }}
     runs-on: ubuntu-latest
     env:
       ZAP1_API_BASE: https://api.frontiercompute.cash
       ZAP1_MAX_ANCHOR_AGE_HOURS: "72"
-      ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID: ${{ vars.ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID }}
+      # Anchoring is operator-authorized and currently paused. Structural drift
+      # still fails; age with pending work remains an explicit warning.
+      ZAP1_REQUIRE_FRESH_ANCHOR: 'false'
     steps:
       - name: Check out repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
 
-      - name: Verify deployed source, anchor, and current proof
+      - name: Check public anchor consistency
+        run: python3 scripts/check_anchor_liveness.py
+
+  public-api-contract:
+    if: ${{ github.event_name == 'schedule' || inputs.mode == 'public-monitor' }}
+    runs-on: ubuntu-latest
+    env:
+      ZAP1_API_BASE: https://api.frontiercompute.cash
+      ZAP1_MAX_SYNC_LAG_BLOCKS: '10'
+      ZAP1_REQUIRE_AUTHENTICATED_ADMIN_CHECKS: 'false'
+      ZAP1_REQUIRE_SOURCE_PARITY: 'false'
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Check public API contract and privacy boundary
+        run: python3 conformance/check_api.py ${ZAP1_API_BASE}
+
+  exact-deployment-gate:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'exact-deployment' }}
+    runs-on: ubuntu-latest
+    env:
+      ZAP1_API_BASE: https://api.frontiercompute.cash
+      ZAP1_MAX_ANCHOR_AGE_HOURS: '72'
+      ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID: ${{ vars.ZAP1_EXPECTED_DEPLOYMENT_IMAGE_ID }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify exact deployed source, anchor, and current proof
         env:
           ZAP1_ADMIN_API_KEY: ${{ secrets.ZAP1_ADMIN_API_KEY }}
         run: bash scripts/check_live.sh
